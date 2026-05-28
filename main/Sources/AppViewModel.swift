@@ -22,6 +22,20 @@ enum AppDisplayBlock: String, CaseIterable, Hashable {
     case budgetKeyNumbers
 }
 
+struct WallpaperThemeProfile: Codable, Identifiable, Equatable {
+    let id: String
+    var name: String
+    var imageFileName: String
+    var palette: WallpaperPalette
+    var visibility: Double
+    var blurRadius: Double
+    var panelOpacity: Double
+    var zoomPercent: Double
+    var horizontalFrame: Double
+    var verticalFrame: Double
+    var createdAt: Date
+}
+
 @MainActor
 @Observable
 final class AppViewModel {
@@ -37,6 +51,9 @@ final class AppViewModel {
     private let wallpaperZoomPercentKey = "wallpaper_zoom_percent"
     private let wallpaperHorizontalFrameKey = "wallpaper_horizontal_frame"
     private let wallpaperVerticalFrameKey = "wallpaper_vertical_frame"
+    private let wallpaperProfilesKey = "wallpaper_profiles"
+    private let activeWallpaperProfileIDKey = "active_wallpaper_profile_id"
+    private let wallpaperProfilesFolderName = "WallpaperProfiles"
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -53,8 +70,9 @@ final class AppViewModel {
         if let f = prefs.string(forKey: "app_font"), let fn = AppFont(rawValue: f) { font = fn }
         if let l = prefs.string(forKey: "app_language") { language = l }
         if let cr = prefs.string(forKey: "app_currency") { currency = cr }
-        loadWallpaperTheme()
+        loadWallpaperProfiles()
         loadWallpaperAppearance()
+        loadWallpaperTheme()
         loadDisplayBlockPreferences()
         isDeveloperMode = prefs.bool(forKey: developerModeKey)
     }
@@ -142,6 +160,9 @@ final class AppViewModel {
     var wallpaperZoomPercent: Double = 0
     var wallpaperHorizontalFrame: Double = 50
     var wallpaperVerticalFrame: Double = 50
+    var wallpaperProfiles: [WallpaperThemeProfile] = []
+    var activeWallpaperProfileID: String?
+    var wallpaperProfileImages: [String: UIImage] = [:]
     var colorMode: AppColorMode = .system
     var font: AppFont = .inter
     var currency: String = "USD"
@@ -168,6 +189,11 @@ final class AppViewModel {
 
     var hasWallpaperTheme: Bool {
         wallpaperPalette != nil && wallpaperImageData != nil && wallpaperUIImage != nil
+    }
+
+    var activeWallpaperProfile: WallpaperThemeProfile? {
+        guard let activeWallpaperProfileID else { return nil }
+        return wallpaperProfiles.first(where: { $0.id == activeWallpaperProfileID })
     }
 
     var wallpaperVisibilityOpacity: Double {
@@ -340,24 +366,93 @@ final class AppViewModel {
         needsResetToSetup = true
     }
 
-    func importWallpaperTheme(from imageData: Data) async throws {
+    func importWallpaperTheme(
+        from imageData: Data,
+        zoomPercent: Double = 0,
+        horizontalFrame: Double = 50,
+        verticalFrame: Double = 50
+    ) async throws {
         let prepared = try await Task.detached(priority: .userInitiated) {
             try WallpaperPaletteExtractor.prepareWallpaper(from: imageData)
         }.value
 
-        wallpaperImageData = prepared.imageData
-        wallpaperUIImage = UIImage(data: prepared.imageData)
-        wallpaperPalette = prepared.palette
-        saveWallpaperTheme()
+        let profileID = UUID().uuidString
+        let profile = WallpaperThemeProfile(
+            id: profileID,
+            name: nextWallpaperProfileName(),
+            imageFileName: "\(profileID).jpg",
+            palette: prepared.palette,
+            visibility: 84,
+            blurRadius: 6,
+            panelOpacity: 64,
+            zoomPercent: clampedPercent(zoomPercent),
+            horizontalFrame: clampedPercent(horizontalFrame),
+            verticalFrame: clampedPercent(verticalFrame),
+            createdAt: Date()
+        )
+
+        if let url = wallpaperProfileFileURL(fileName: profile.imageFileName) {
+            try? prepared.imageData.write(to: url, options: [.atomic])
+        }
+
+        wallpaperProfiles.insert(profile, at: 0)
+        wallpaperProfileImages[profile.id] = UIImage(data: prepared.imageData)
+        saveWallpaperProfiles()
+        applyWallpaperProfile(profile, imageData: prepared.imageData)
         savePreferencesToDisk()
+    }
+
+    func selectWallpaperProfile(_ profile: WallpaperThemeProfile) {
+        guard let imageData = wallpaperProfileImageData(for: profile) else { return }
+        applyWallpaperProfile(profile, imageData: imageData)
+    }
+
+    func saveCurrentWallpaperProfile() {
+        guard let activeWallpaperProfileID,
+              let index = wallpaperProfiles.firstIndex(where: { $0.id == activeWallpaperProfileID }) else {
+            saveWallpaperAppearance()
+            return
+        }
+
+        wallpaperProfiles[index].visibility = clampedPercent(wallpaperVisibility)
+        wallpaperProfiles[index].blurRadius = clampedPercent(wallpaperBlurRadius)
+        wallpaperProfiles[index].panelOpacity = clampedPercent(wallpaperPanelOpacity)
+        wallpaperProfiles[index].zoomPercent = clampedPercent(wallpaperZoomPercent)
+        wallpaperProfiles[index].horizontalFrame = clampedPercent(wallpaperHorizontalFrame)
+        wallpaperProfiles[index].verticalFrame = clampedPercent(wallpaperVerticalFrame)
+        saveWallpaperAppearance()
+        saveWallpaperProfiles()
+    }
+
+    private func applyWallpaperProfile(_ profile: WallpaperThemeProfile, imageData: Data) {
+        wallpaperImageData = imageData
+        wallpaperUIImage = UIImage(data: imageData)
+        wallpaperPalette = profile.palette
+        activeWallpaperProfileID = profile.id
+        wallpaperVisibility = clampedPercent(profile.visibility)
+        wallpaperBlurRadius = clampedPercent(profile.blurRadius)
+        wallpaperPanelOpacity = clampedPercent(profile.panelOpacity)
+        wallpaperZoomPercent = clampedPercent(profile.zoomPercent)
+        wallpaperHorizontalFrame = clampedPercent(profile.horizontalFrame)
+        wallpaperVerticalFrame = clampedPercent(profile.verticalFrame)
+        saveWallpaperTheme()
+        saveWallpaperAppearance()
+        prefs.set(profile.id, forKey: activeWallpaperProfileIDKey)
+        prefs.synchronize()
+    }
+
+    private func nextWallpaperProfileName() -> String {
+        "\(loc("Wallpaper")) \(wallpaperProfiles.count + 1)"
     }
 
     func clearWallpaperTheme() {
         wallpaperImageData = nil
         wallpaperUIImage = nil
         wallpaperPalette = nil
+        activeWallpaperProfileID = nil
         resetWallpaperAppearance()
         prefs.removeObject(forKey: wallpaperPaletteKey)
+        prefs.removeObject(forKey: activeWallpaperProfileIDKey)
         if let url = wallpaperFileURL() {
             try? FileManager.default.removeItem(at: url)
         }
@@ -365,6 +460,13 @@ final class AppViewModel {
     }
 
     private func loadWallpaperTheme() {
+        if let activeID = prefs.string(forKey: activeWallpaperProfileIDKey),
+           let profile = wallpaperProfiles.first(where: { $0.id == activeID }),
+           let imageData = wallpaperProfileImageData(for: profile) {
+            applyWallpaperProfile(profile, imageData: imageData)
+            return
+        }
+
         if let paletteData = prefs.data(forKey: wallpaperPaletteKey),
            let palette = try? JSONDecoder().decode(WallpaperPalette.self, from: paletteData) {
             wallpaperPalette = palette
@@ -375,6 +477,10 @@ final class AppViewModel {
            let image = UIImage(data: data) {
             wallpaperImageData = data
             wallpaperUIImage = image
+
+            if wallpaperProfiles.isEmpty, let palette = wallpaperPalette {
+                migrateLegacyWallpaperToProfile(imageData: data, palette: palette)
+            }
         }
     }
 
@@ -385,6 +491,7 @@ final class AppViewModel {
         prefs.set(wallpaperZoomPercent, forKey: wallpaperZoomPercentKey)
         prefs.set(wallpaperHorizontalFrame, forKey: wallpaperHorizontalFrameKey)
         prefs.set(wallpaperVerticalFrame, forKey: wallpaperVerticalFrameKey)
+        updateActiveWallpaperProfileSettings()
         prefs.synchronize()
     }
 
@@ -433,6 +540,77 @@ final class AppViewModel {
         min(max(value, 0), 100)
     }
 
+    private func loadWallpaperProfiles() {
+        guard let data = prefs.data(forKey: wallpaperProfilesKey),
+              let profiles = try? JSONDecoder().decode([WallpaperThemeProfile].self, from: data) else {
+            wallpaperProfiles = []
+            wallpaperProfileImages = [:]
+            return
+        }
+
+        wallpaperProfiles = profiles.sorted { $0.createdAt > $1.createdAt }
+        var images: [String: UIImage] = [:]
+        for profile in wallpaperProfiles {
+            if let data = wallpaperProfileImageData(for: profile),
+               let image = UIImage(data: data) {
+                images[profile.id] = image
+            }
+        }
+        wallpaperProfileImages = images
+    }
+
+    private func saveWallpaperProfiles() {
+        if let data = try? JSONEncoder().encode(wallpaperProfiles) {
+            prefs.set(data, forKey: wallpaperProfilesKey)
+        }
+        prefs.synchronize()
+    }
+
+    private func updateActiveWallpaperProfileSettings() {
+        guard let activeWallpaperProfileID,
+              let index = wallpaperProfiles.firstIndex(where: { $0.id == activeWallpaperProfileID }) else { return }
+
+        wallpaperProfiles[index].visibility = clampedPercent(wallpaperVisibility)
+        wallpaperProfiles[index].blurRadius = clampedPercent(wallpaperBlurRadius)
+        wallpaperProfiles[index].panelOpacity = clampedPercent(wallpaperPanelOpacity)
+        wallpaperProfiles[index].zoomPercent = clampedPercent(wallpaperZoomPercent)
+        wallpaperProfiles[index].horizontalFrame = clampedPercent(wallpaperHorizontalFrame)
+        wallpaperProfiles[index].verticalFrame = clampedPercent(wallpaperVerticalFrame)
+        saveWallpaperProfiles()
+    }
+
+    private func migrateLegacyWallpaperToProfile(imageData: Data, palette: WallpaperPalette) {
+        let profileID = UUID().uuidString
+        let profile = WallpaperThemeProfile(
+            id: profileID,
+            name: nextWallpaperProfileName(),
+            imageFileName: "\(profileID).jpg",
+            palette: palette,
+            visibility: clampedPercent(wallpaperVisibility),
+            blurRadius: clampedPercent(wallpaperBlurRadius),
+            panelOpacity: clampedPercent(wallpaperPanelOpacity),
+            zoomPercent: clampedPercent(wallpaperZoomPercent),
+            horizontalFrame: clampedPercent(wallpaperHorizontalFrame),
+            verticalFrame: clampedPercent(wallpaperVerticalFrame),
+            createdAt: Date()
+        )
+
+        if let url = wallpaperProfileFileURL(fileName: profile.imageFileName) {
+            try? imageData.write(to: url, options: [.atomic])
+        }
+
+        wallpaperProfiles = [profile]
+        wallpaperProfileImages[profile.id] = UIImage(data: imageData)
+        activeWallpaperProfileID = profile.id
+        prefs.set(profile.id, forKey: activeWallpaperProfileIDKey)
+        saveWallpaperProfiles()
+    }
+
+    private func wallpaperProfileImageData(for profile: WallpaperThemeProfile) -> Data? {
+        guard let url = wallpaperProfileFileURL(fileName: profile.imageFileName) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
     private func saveWallpaperTheme() {
         if let palette = wallpaperPalette,
            let paletteData = try? JSONEncoder().encode(palette) {
@@ -442,6 +620,18 @@ final class AppViewModel {
         guard let wallpaperImageData,
               let url = wallpaperFileURL() else { return }
         try? wallpaperImageData.write(to: url, options: [.atomic])
+    }
+
+    private func wallpaperProfileFileURL(fileName: String) -> URL? {
+        guard let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+
+        let folder = baseURL
+            .appendingPathComponent("PennyLet", isDirectory: true)
+            .appendingPathComponent(wallpaperProfilesFolderName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent(fileName)
     }
 
     private func wallpaperFileURL() -> URL? {

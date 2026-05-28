@@ -3,6 +3,19 @@ import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
 
+struct WallpaperCropSource: Identifiable {
+    let id = UUID()
+    let imageData: Data
+    let image: UIImage
+}
+
+struct WallpaperCropResult {
+    let imageData: Data
+    let zoomPercent: Double
+    let horizontalFrame: Double
+    let verticalFrame: Double
+}
+
 struct SettingsView: View {
     @Environment(AppViewModel.self) private var viewModel
     @State private var exportItem: ExportShareItem?
@@ -21,6 +34,8 @@ struct SettingsView: View {
     @State private var selectedWallpaper: PhotosPickerItem?
     @State private var isAnalyzingWallpaper = false
     @State private var wallpaperError: String?
+    @State private var pendingWallpaperCrop: WallpaperCropSource?
+    @State private var profileSaveMessage: String?
 
     // Editable budget fields
     @State private var incomeText: String = ""
@@ -101,6 +116,11 @@ struct SettingsView: View {
         .sheet(isPresented: $showUpgrade) {
             UpgradeView()
         }
+        .sheet(item: $pendingWallpaperCrop) { source in
+            WallpaperCropEditor(source: source) { result in
+                Task { await applyWallpaperCrop(result) }
+            }
+        }
     }
 
     private var proSection: some View {
@@ -148,25 +168,35 @@ struct SettingsView: View {
     }
 
     private var themePicker: some View {
-        HStack(spacing: 12) {
-            Text(viewModel.themeLabel)
-            Spacer()
-            ForEach(AppTheme.allCases, id: \.self) { theme in
-                Button {
-                    viewModel.theme = theme
-                    savePreferences()
-                } label: {
-                    Circle()
-                        .fill(theme.primaryColor)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(.primary, lineWidth: viewModel.theme == theme ? 3 : 0)
-                        )
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Text(viewModel.themeLabel)
+                Spacer()
+                ForEach(AppTheme.allCases, id: \.self) { theme in
+                    Button {
+                        viewModel.theme = theme
+                        savePreferences()
+                    } label: {
+                        Circle()
+                            .fill(theme.primaryColor)
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(.primary, lineWidth: viewModel.theme == theme ? 3 : 0)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+            }
+
+            if viewModel.hasWallpaperTheme {
+                Text(viewModel.loc("Wallpaper theme is active. Remove it to use manual colors."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
+        .opacity(viewModel.hasWallpaperTheme ? 0.46 : 1)
+        .disabled(viewModel.hasWallpaperTheme)
     }
 
     private var colorModePicker: some View {
@@ -202,6 +232,10 @@ struct SettingsView: View {
                 }
 
                 Spacer()
+            }
+
+            if !viewModel.wallpaperProfiles.isEmpty {
+                wallpaperProfileScroller
             }
 
             if let image = viewModel.wallpaperUIImage {
@@ -248,34 +282,25 @@ struct SettingsView: View {
                     )
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(viewModel.loc("Wallpaper frame"))
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.primary)
+                HStack(spacing: 10) {
+                    Button {
+                        Haptics.success()
+                        viewModel.saveCurrentWallpaperProfile()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            profileSaveMessage = viewModel.loc("Profile saved")
+                        }
+                    } label: {
+                        Label(viewModel.loc("Save Profile"), systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
 
-                    wallpaperSlider(
-                        viewModel.loc("Zoom"),
-                        value: Binding(
-                            get: { viewModel.wallpaperZoomPercent },
-                            set: { viewModel.wallpaperZoomPercent = $0 }
-                        )
-                    )
-
-                    wallpaperSlider(
-                        viewModel.loc("Horizontal frame"),
-                        value: Binding(
-                            get: { viewModel.wallpaperHorizontalFrame },
-                            set: { viewModel.wallpaperHorizontalFrame = $0 }
-                        )
-                    )
-
-                    wallpaperSlider(
-                        viewModel.loc("Vertical frame"),
-                        value: Binding(
-                            get: { viewModel.wallpaperVerticalFrame },
-                            set: { viewModel.wallpaperVerticalFrame = $0 }
-                        )
-                    )
+                    if let profileSaveMessage {
+                        Text(profileSaveMessage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(viewModel.primaryColor)
+                            .transition(.opacity)
+                    }
                 }
             }
 
@@ -334,50 +359,119 @@ struct SettingsView: View {
             }
     }
 
+    private var wallpaperProfileScroller: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(viewModel.loc("Saved Wallpaper Profiles"))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(viewModel.wallpaperProfiles) { profile in
+                        Button {
+                            Haptics.selection()
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                viewModel.selectWallpaperProfile(profile)
+                                profileSaveMessage = nil
+                            }
+                        } label: {
+                            wallpaperProfileCard(profile)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func wallpaperProfileCard(_ profile: WallpaperThemeProfile) -> some View {
+        let isSelected = profile.id == viewModel.activeWallpaperProfileID
+
+        return VStack(alignment: .leading, spacing: 6) {
+            if let image = viewModel.wallpaperProfileImages[profile.id] {
+                WallpaperImageSurface(
+                    image: image,
+                    aspectRatio: phoneAspectRatio,
+                    zoomPercent: profile.zoomPercent,
+                    horizontalFrame: profile.horizontalFrame,
+                    verticalFrame: profile.verticalFrame,
+                    blurRadius: min(profile.blurRadius, 8),
+                    visibility: 1
+                )
+                .frame(width: 58, height: 118)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.tertiarySystemGroupedBackground))
+                    .frame(width: 58, height: 118)
+            }
+
+            Text(profile.name)
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .frame(width: 70, alignment: .leading)
+        }
+        .padding(7)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isSelected ? viewModel.primaryColor : Color(.separator).opacity(0.14), lineWidth: isSelected ? 2 : 1)
+        }
+    }
+
     private func wallpaperFramePreview(_ image: UIImage) -> some View {
-        GeometryReader { proxy in
-            let offset = viewModel.wallpaperFrameOffset(in: proxy.size)
+        HStack {
+            Spacer(minLength: 0)
 
-            ZStack {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .scaleEffect(viewModel.wallpaperZoomScale)
-                    .offset(x: offset.width, y: offset.height)
-                    .clipped()
-                    .blur(radius: viewModel.wallpaperBlurValue)
-                    .opacity(viewModel.wallpaperVisibilityOpacity)
-
+            WallpaperImageSurface(
+                image: image,
+                aspectRatio: phoneAspectRatio,
+                zoomPercent: viewModel.wallpaperZoomPercent,
+                horizontalFrame: viewModel.wallpaperHorizontalFrame,
+                verticalFrame: viewModel.wallpaperVerticalFrame,
+                blurRadius: viewModel.wallpaperBlurRadius,
+                visibility: viewModel.wallpaperVisibilityOpacity
+            )
+            .overlay {
                 LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.08),
-                        Color.clear,
-                        viewModel.primaryColor.opacity(0.10)
-                    ],
+                    colors: [Color.black.opacity(0.08), Color.clear, viewModel.primaryColor.opacity(0.10)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-
+            }
+            .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 8) {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color(.secondarySystemGroupedBackground).opacity(viewModel.wallpaperPanelOpacityValue))
-                        .frame(width: proxy.size.width * 0.58, height: 34)
+                        .frame(width: 130, height: 34)
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color(.secondarySystemGroupedBackground).opacity(viewModel.wallpaperPanelOpacityValue * 0.82))
-                        .frame(width: proxy.size.width * 0.42, height: 24)
+                        .frame(width: 96, height: 24)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 .padding(14)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .frame(width: previewPhoneWidth, height: previewPhoneWidth / phoneAspectRatio)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(.white.opacity(0.24), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+
+            Spacer(minLength: 0)
         }
-        .frame(height: 190)
+    }
+
+    private var previewPhoneWidth: CGFloat {
+        min(UIScreen.main.bounds.width * 0.56, 210)
+    }
+
+    private var phoneAspectRatio: CGFloat {
+        let size = UIScreen.main.bounds.size
+        let shortSide = max(1, min(size.width, size.height))
+        let longSide = max(shortSide, max(size.width, size.height))
+        return shortSide / longSide
     }
 
     private func wallpaperSlider(
@@ -777,7 +871,29 @@ struct SettingsView: View {
                 wallpaperError = viewModel.loc("Could not read that image. Try another wallpaper.")
                 return
             }
-            try await viewModel.importWallpaperTheme(from: data)
+            guard let image = UIImage(data: data) else {
+                wallpaperError = viewModel.loc("Could not read that image. Try another wallpaper.")
+                return
+            }
+            pendingWallpaperCrop = WallpaperCropSource(imageData: data, image: image)
+        } catch {
+            wallpaperError = viewModel.loc("Could not read that image. Try another wallpaper.")
+        }
+    }
+
+    private func applyWallpaperCrop(_ result: WallpaperCropResult) async {
+        isAnalyzingWallpaper = true
+        wallpaperError = nil
+        defer { isAnalyzingWallpaper = false }
+
+        do {
+            try await viewModel.importWallpaperTheme(
+                from: result.imageData,
+                zoomPercent: result.zoomPercent,
+                horizontalFrame: result.horizontalFrame,
+                verticalFrame: result.verticalFrame
+            )
+            profileSaveMessage = viewModel.loc("Profile saved")
             Haptics.success()
         } catch {
             wallpaperError = viewModel.loc("Could not read that image. Try another wallpaper.")
@@ -874,6 +990,213 @@ struct SettingsView: View {
         importResult = count > 0 ? (true, count) : (false, 0)
     }
 
+}
+
+private struct WallpaperImageSurface: View {
+    let image: UIImage
+    let aspectRatio: CGFloat
+    let zoomPercent: Double
+    let horizontalFrame: Double
+    let verticalFrame: Double
+    let blurRadius: Double
+    let visibility: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let offset = frameOffset(in: proxy.size)
+
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .scaleEffect(zoomScale)
+                .offset(x: offset.width, y: offset.height)
+                .blur(radius: CGFloat(blurRadius))
+                .opacity(visibility)
+                .clipped()
+        }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .clipped()
+    }
+
+    private var zoomScale: CGFloat {
+        1.04 + CGFloat(clamped(zoomPercent) / 100 * 0.96)
+    }
+
+    private func frameOffset(in size: CGSize) -> CGSize {
+        let horizontal = (clamped(horizontalFrame) - 50) / 50
+        let vertical = (clamped(verticalFrame) - 50) / 50
+        let travel = 0.02 + (clamped(zoomPercent) / 100 * 0.32)
+        return CGSize(width: size.width * travel * horizontal, height: size.height * travel * vertical)
+    }
+
+    private func clamped(_ value: Double) -> Double {
+        min(max(value, 0), 100)
+    }
+}
+
+private struct WallpaperCropEditor: View {
+    @Environment(AppViewModel.self) private var viewModel
+    @Environment(\.dismiss) private var dismiss
+
+    let source: WallpaperCropSource
+    let onSave: (WallpaperCropResult) -> Void
+
+    @State private var zoomPercent: Double = 16
+    @State private var horizontalFrame: Double = 50
+    @State private var verticalFrame: Double = 50
+    @State private var dragStartHorizontal: Double?
+    @State private var dragStartVertical: Double?
+    @State private var zoomStartPercent: Double?
+
+    private var phoneAspectRatio: CGFloat {
+        let size = UIScreen.main.bounds.size
+        let shortSide = max(1, min(size.width, size.height))
+        let longSide = max(shortSide, max(size.width, size.height))
+        return shortSide / longSide
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                Text(viewModel.loc("Pinch and drag to frame your wallpaper."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+
+                GeometryReader { proxy in
+                    let cropSize = phoneCropSize(in: proxy.size)
+
+                    ZStack {
+                        WallpaperImageSurface(
+                            image: source.image,
+                            aspectRatio: phoneAspectRatio,
+                            zoomPercent: zoomPercent,
+                            horizontalFrame: horizontalFrame,
+                            verticalFrame: verticalFrame,
+                            blurRadius: 0,
+                            visibility: 1
+                        )
+                        .frame(width: cropSize.width, height: cropSize.height)
+                        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                                .stroke(.white.opacity(0.34), lineWidth: 1.5)
+                        }
+                        .overlay {
+                            cropGrid
+                                .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                                .allowsHitTesting(false)
+                        }
+                        .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
+                        .gesture(cropGesture(size: cropSize))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "hand.draw.fill")
+                    Text("\(viewModel.loc("Zoom")) \(Int(zoomPercent.rounded()))%")
+                    Text("•")
+                    Text("\(viewModel.loc("Horizontal frame")) \(Int(horizontalFrame.rounded()))%")
+                }
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+            .padding(.top, 16)
+            .padding(.bottom, 18)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle(viewModel.loc("Crop Wallpaper"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(viewModel.cancelLabel) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(viewModel.loc("Use Crop")) {
+                        onSave(WallpaperCropResult(
+                            imageData: source.imageData,
+                            zoomPercent: zoomPercent,
+                            horizontalFrame: horizontalFrame,
+                            verticalFrame: verticalFrame
+                        ))
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    private var cropGrid: some View {
+        GeometryReader { proxy in
+            Path { path in
+                let thirdWidth = proxy.size.width / 3
+                let thirdHeight = proxy.size.height / 3
+                for index in 1...2 {
+                    let x = thirdWidth * CGFloat(index)
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                    let y = thirdHeight * CGFloat(index)
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+                }
+            }
+            .stroke(.white.opacity(0.36), lineWidth: 0.8)
+        }
+    }
+
+    private func phoneCropSize(in available: CGSize) -> CGSize {
+        let maxWidth = max(180, available.width)
+        let maxHeight = max(220, available.height)
+        let widthFromHeight = maxHeight * phoneAspectRatio
+        if widthFromHeight <= maxWidth {
+            return CGSize(width: widthFromHeight, height: maxHeight)
+        }
+
+        return CGSize(width: maxWidth, height: maxWidth / phoneAspectRatio)
+    }
+
+    private func cropGesture(size: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if dragStartHorizontal == nil {
+                    dragStartHorizontal = horizontalFrame
+                    dragStartVertical = verticalFrame
+                }
+                let travel = max(1, 0.02 + (zoomPercent / 100 * 0.32))
+                horizontalFrame = clamped((dragStartHorizontal ?? 50) + Double(value.translation.width / size.width) / travel * 50)
+                verticalFrame = clamped((dragStartVertical ?? 50) + Double(value.translation.height / size.height) / travel * 50)
+            }
+            .onEnded { _ in
+                dragStartHorizontal = nil
+                dragStartVertical = nil
+                Haptics.selection()
+            }
+            .simultaneously(with: MagnificationGesture()
+                .onChanged { value in
+                    if zoomStartPercent == nil {
+                        zoomStartPercent = zoomPercent
+                    }
+                    let startScale = zoomScale(for: zoomStartPercent ?? zoomPercent)
+                    let newScale = min(max(startScale * value, 1.04), 2.0)
+                    zoomPercent = clamped((Double(newScale) - 1.04) / 0.96 * 100)
+                }
+                .onEnded { _ in
+                    zoomStartPercent = nil
+                    Haptics.selection()
+                }
+            )
+    }
+
+    private func zoomScale(for percent: Double) -> CGFloat {
+        1.04 + CGFloat(clamped(percent) / 100 * 0.96)
+    }
+
+    private func clamped(_ value: Double) -> Double {
+        min(max(value, 0), 100)
+    }
 }
 
 struct ExportShareItem: Identifiable {
