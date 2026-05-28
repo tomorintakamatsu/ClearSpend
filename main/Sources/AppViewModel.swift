@@ -31,6 +31,9 @@ final class AppViewModel {
     private let hiddenDisplayBlocksKey = "hidden_display_blocks"
     private let wallpaperPaletteKey = "wallpaper_palette"
     private let wallpaperFileName = "pennylet_wallpaper_theme.jpg"
+    private let wallpaperVisibilityKey = "wallpaper_visibility"
+    private let wallpaperBlurRadiusKey = "wallpaper_blur_radius"
+    private let wallpaperPanelOpacityKey = "wallpaper_panel_opacity"
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -48,6 +51,7 @@ final class AppViewModel {
         if let l = prefs.string(forKey: "app_language") { language = l }
         if let cr = prefs.string(forKey: "app_currency") { currency = cr }
         loadWallpaperTheme()
+        loadWallpaperAppearance()
         loadDisplayBlockPreferences()
         isDeveloperMode = prefs.bool(forKey: developerModeKey)
     }
@@ -128,6 +132,9 @@ final class AppViewModel {
     var theme: AppTheme = .sage
     var wallpaperPalette: WallpaperPalette?
     var wallpaperImageData: Data?
+    var wallpaperVisibility: Double = 0.78
+    var wallpaperBlurRadius: Double = 3
+    var wallpaperPanelOpacity: Double = 0.62
     var colorMode: AppColorMode = .system
     var font: AppFont = .inter
     var currency: String = "USD"
@@ -317,6 +324,7 @@ final class AppViewModel {
     func clearWallpaperTheme() {
         wallpaperImageData = nil
         wallpaperPalette = nil
+        resetWallpaperAppearance()
         prefs.removeObject(forKey: wallpaperPaletteKey)
         if let url = wallpaperFileURL() {
             try? FileManager.default.removeItem(at: url)
@@ -335,6 +343,34 @@ final class AppViewModel {
            UIImage(data: data) != nil {
             wallpaperImageData = data
         }
+    }
+
+    func saveWallpaperAppearance() {
+        prefs.set(wallpaperVisibility, forKey: wallpaperVisibilityKey)
+        prefs.set(wallpaperBlurRadius, forKey: wallpaperBlurRadiusKey)
+        prefs.set(wallpaperPanelOpacity, forKey: wallpaperPanelOpacityKey)
+        prefs.synchronize()
+    }
+
+    private func loadWallpaperAppearance() {
+        if prefs.object(forKey: wallpaperVisibilityKey) != nil {
+            wallpaperVisibility = prefs.double(forKey: wallpaperVisibilityKey)
+        }
+        if prefs.object(forKey: wallpaperBlurRadiusKey) != nil {
+            wallpaperBlurRadius = prefs.double(forKey: wallpaperBlurRadiusKey)
+        }
+        if prefs.object(forKey: wallpaperPanelOpacityKey) != nil {
+            wallpaperPanelOpacity = prefs.double(forKey: wallpaperPanelOpacityKey)
+        }
+    }
+
+    private func resetWallpaperAppearance() {
+        wallpaperVisibility = 0.78
+        wallpaperBlurRadius = 3
+        wallpaperPanelOpacity = 0.62
+        prefs.removeObject(forKey: wallpaperVisibilityKey)
+        prefs.removeObject(forKey: wallpaperBlurRadiusKey)
+        prefs.removeObject(forKey: wallpaperPanelOpacityKey)
     }
 
     private func saveWallpaperTheme() {

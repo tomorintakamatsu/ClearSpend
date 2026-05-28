@@ -28,23 +28,7 @@ extension View {
     }
 
     func premiumPanel(tint: Color? = nil) -> some View {
-        background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill((tint ?? Color.primary).opacity(0.018))
-                }
-        }
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color(.separator).opacity(0.08), lineWidth: 1)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke((tint ?? Color.primary).opacity(0.08), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.035), radius: 14, y: 5)
+        modifier(PremiumPanelModifier(tint: tint))
     }
 
     func premiumActionFill(tint: Color, isEnabled: Bool = true) -> some View {
@@ -65,6 +49,38 @@ extension View {
     }
 }
 
+private struct PremiumPanelModifier: ViewModifier {
+    @Environment(AppViewModel.self) private var viewModel
+    let tint: Color?
+
+    func body(content: Content) -> some View {
+        let activeTint = tint ?? Color.primary
+        let panelOpacity = viewModel.hasWallpaperTheme ? viewModel.wallpaperPanelOpacity : 1
+        let tintOpacity = viewModel.hasWallpaperTheme ? 0.052 : 0.018
+        let separatorOpacity = viewModel.hasWallpaperTheme ? 0.12 : 0.08
+        let shadowOpacity = viewModel.hasWallpaperTheme ? 0.085 : 0.035
+
+        content
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground).opacity(panelOpacity))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(activeTint.opacity(tintOpacity))
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color(.separator).opacity(separatorOpacity), lineWidth: 1)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(activeTint.opacity(viewModel.hasWallpaperTheme ? 0.13 : 0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(shadowOpacity), radius: viewModel.hasWallpaperTheme ? 18 : 14, y: 5)
+    }
+}
+
 private struct PennyLetSurfaceBackground: View {
     @Environment(AppViewModel.self) private var viewModel
     let theme: AppTheme
@@ -80,17 +96,21 @@ private struct PennyLetSurfaceBackground: View {
                     .resizable()
                     .scaledToFill()
                     .ignoresSafeArea()
-                    .blur(radius: 18)
+                    .blur(radius: viewModel.wallpaperBlurRadius)
                     .saturation(1.04)
                     .contrast(0.92)
-                    .opacity(0.34)
+                    .opacity(viewModel.wallpaperVisibility)
                     .accessibilityHidden(true)
+
+                Color(.systemGroupedBackground)
+                    .opacity(0.18)
+                    .ignoresSafeArea()
 
                 LinearGradient(
                     colors: [
-                        viewModel.primaryColor.opacity(0.14),
-                        Color(.systemGroupedBackground).opacity(0.88),
-                        viewModel.accentColor.opacity(0.10)
+                        viewModel.primaryColor.opacity(0.13),
+                        Color(.clear),
+                        viewModel.accentColor.opacity(0.11)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing

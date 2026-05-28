@@ -318,17 +318,6 @@ struct WelcomeView: View {
         }
         onboardingError = nil
         isSaving = true
-        let data = BudgetData(
-            monthlyIncome: income,
-            monthlyEssentials: CurrencyFormat.parseInput(monthlyEssentials),
-            monthlySavingsGoal: CurrencyFormat.parseInput(monthlySavings),
-            payDay: payDay,
-            currency: selectedCurrency,
-            language: selectedLanguage,
-            theme: selectedTheme.rawValue,
-            colorMode: selectedColorMode.rawValue,
-            font: selectedFont.rawValue,
-        )
         Task {
             let localBudget = Budget(
                 id: UUID().uuidString,

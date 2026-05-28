@@ -210,12 +210,13 @@ struct SettingsView: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 76, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .frame(width: 110, height: 70)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(.white.opacity(0.28), lineWidth: 1)
                         }
+                        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(viewModel.loc("Wallpaper colors active"))
@@ -229,6 +230,39 @@ struct SettingsView: View {
                     }
 
                     Spacer()
+                }
+
+                VStack(spacing: 12) {
+                    wallpaperSlider(
+                        viewModel.loc("Wallpaper visibility"),
+                        value: Binding(
+                            get: { viewModel.wallpaperVisibility },
+                            set: { viewModel.wallpaperVisibility = $0; viewModel.saveWallpaperAppearance() }
+                        ),
+                        range: 0.35...0.95,
+                        format: { "\(Int($0 * 100))%" }
+                    )
+
+                    wallpaperSlider(
+                        viewModel.loc("Wallpaper blur"),
+                        value: Binding(
+                            get: { viewModel.wallpaperBlurRadius },
+                            set: { viewModel.wallpaperBlurRadius = $0; viewModel.saveWallpaperAppearance() }
+                        ),
+                        range: 0...18,
+                        step: 1,
+                        format: { "\(Int($0))" }
+                    )
+
+                    wallpaperSlider(
+                        viewModel.loc("Card opacity"),
+                        value: Binding(
+                            get: { viewModel.wallpaperPanelOpacity },
+                            set: { viewModel.wallpaperPanelOpacity = $0; viewModel.saveWallpaperAppearance() }
+                        ),
+                        range: 0.42...0.90,
+                        format: { "\(Int($0 * 100))%" }
+                    )
                 }
             }
 
@@ -285,6 +319,34 @@ struct SettingsView: View {
                 Circle()
                     .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
             }
+    }
+
+    private func wallpaperSlider(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double? = nil,
+        format: @escaping (Double) -> String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(format(value.wrappedValue))
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(viewModel.primaryColor)
+            }
+
+            if let step {
+                Slider(value: value, in: range, step: step)
+                    .tint(viewModel.primaryColor)
+            } else {
+                Slider(value: value, in: range)
+                    .tint(viewModel.primaryColor)
+            }
+        }
     }
 
     private var fontPicker: some View {
