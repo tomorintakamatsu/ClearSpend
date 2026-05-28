@@ -46,7 +46,7 @@ struct TopCategoriesList: View {
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
         .animation(AnimationPresets.fold, value: isExpanded)
     }
 

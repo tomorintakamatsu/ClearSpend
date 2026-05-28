@@ -93,7 +93,7 @@ struct WelcomeView: View {
             } label: {
                 Label(viewModel.loc("Import CSV"), systemImage: "square.and.arrow.down")
                     .font(.subheadline)
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
             }
 
             Text(viewModel.loc("Skip manual setup by importing a CSV file of your transactions."))

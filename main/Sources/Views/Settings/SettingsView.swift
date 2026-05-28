@@ -1,5 +1,7 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct SettingsView: View {
     @Environment(AppViewModel.self) private var viewModel
@@ -16,6 +18,9 @@ struct SettingsView: View {
     @State private var showDeveloperControls = false
     @State private var showDeveloperUnlockAlert = false
     @State private var showUpgrade = false
+    @State private var selectedWallpaper: PhotosPickerItem?
+    @State private var isAnalyzingWallpaper = false
+    @State private var wallpaperError: String?
 
     // Editable budget fields
     @State private var incomeText: String = ""
@@ -135,6 +140,7 @@ struct SettingsView: View {
     private var appearanceSection: some View {
         Section(viewModel.appearanceSection) {
             themePicker
+            wallpaperThemePicker
             colorModePicker
             fontPicker
             weekStartPicker
@@ -172,6 +178,113 @@ struct SettingsView: View {
                 Text(viewModel.loc(mode.label)).tag(mode)
             }
         }
+    }
+
+    private var wallpaperThemePicker: some View {
+        let pickerTitle = viewModel.loc(viewModel.hasWallpaperTheme ? "Change Wallpaper" : "Import Wallpaper")
+        let pickerTint = viewModel.primaryColor
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(viewModel.primaryColor)
+                    .frame(width: 34, height: 34)
+                    .background(viewModel.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(viewModel.loc("Wallpaper Theme"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(viewModel.loc("PennyLet reads the main colors from your wallpaper and tints the app automatically."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+            }
+
+            if let data = viewModel.wallpaperImageData,
+               let image = UIImage(data: data) {
+                HStack(spacing: 12) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 76, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(.white.opacity(0.28), lineWidth: 1)
+                        }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(viewModel.loc("Wallpaper colors active"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            paletteDot(viewModel.primaryColor)
+                            paletteDot(viewModel.accentColor)
+                            paletteDot(viewModel.backgroundColor)
+                        }
+                    }
+
+                    Spacer()
+                }
+            }
+
+            if isAnalyzingWallpaper {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(viewModel.loc("Analyzing wallpaper colors..."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let wallpaperError {
+                Text(wallpaperError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $selectedWallpaper, matching: .images) {
+                    Label(pickerTitle, systemImage: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(pickerTint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .disabled(isAnalyzingWallpaper)
+
+                if viewModel.hasWallpaperTheme {
+                    Button(role: .destructive) {
+                        Haptics.selection()
+                        viewModel.clearWallpaperTheme()
+                    } label: {
+                        Text(viewModel.loc("Remove Wallpaper Theme"))
+                            .font(.caption.weight(.semibold))
+                    }
+                    .disabled(isAnalyzingWallpaper)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .onChange(of: selectedWallpaper) { _, item in
+            guard let item else { return }
+            Task { await importWallpaper(item) }
+        }
+    }
+
+    private func paletteDot(_ color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 18, height: 18)
+            .overlay {
+                Circle()
+                    .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
+            }
     }
 
     private var fontPicker: some View {
@@ -367,7 +480,7 @@ struct SettingsView: View {
                     showAutoAnalysisHelp = true
                 } label: {
                     Image(systemName: "questionmark.circle.fill")
-                        .foregroundStyle(viewModel.theme.primaryColor)
+                        .foregroundStyle(viewModel.primaryColor)
                 }
             }
         }
@@ -526,6 +639,26 @@ struct SettingsView: View {
         )
         viewModel.updateBudgetLocally(data)
         viewModel.savePreferencesToDisk()
+    }
+
+    private func importWallpaper(_ item: PhotosPickerItem) async {
+        isAnalyzingWallpaper = true
+        wallpaperError = nil
+        defer {
+            isAnalyzingWallpaper = false
+            selectedWallpaper = nil
+        }
+
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                wallpaperError = viewModel.loc("Could not read that image. Try another wallpaper.")
+                return
+            }
+            try await viewModel.importWallpaperTheme(from: data)
+            Haptics.success()
+        } catch {
+            wallpaperError = viewModel.loc("Could not read that image. Try another wallpaper.")
+        }
     }
 
     private func savePreference(_ key: String, _ value: Any) {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension View {
     func cardStyle() -> some View {
@@ -65,10 +66,37 @@ extension View {
 }
 
 private struct PennyLetSurfaceBackground: View {
+    @Environment(AppViewModel.self) private var viewModel
     let theme: AppTheme
 
     var body: some View {
-        Color(.systemGroupedBackground)
-            .ignoresSafeArea()
+        ZStack {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+
+            if let data = viewModel.wallpaperImageData,
+               let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+                    .blur(radius: 18)
+                    .saturation(1.04)
+                    .contrast(0.92)
+                    .opacity(0.34)
+                    .accessibilityHidden(true)
+
+                LinearGradient(
+                    colors: [
+                        viewModel.primaryColor.opacity(0.14),
+                        Color(.systemGroupedBackground).opacity(0.88),
+                        viewModel.accentColor.opacity(0.10)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            }
+        }
     }
 }

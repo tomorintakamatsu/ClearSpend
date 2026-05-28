@@ -127,7 +127,7 @@ struct SubscriptionTrackerView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                     .foregroundStyle(.white)
-                    .premiumActionFill(tint: viewModel.theme.primaryColor)
+                    .premiumActionFill(tint: viewModel.primaryColor)
             }
             .buttonStyle(.plain)
 
@@ -144,7 +144,7 @@ struct SubscriptionTrackerView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     .overlay {
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(viewModel.theme.primaryColor.opacity(0.12), lineWidth: 1)
+                            .stroke(viewModel.primaryColor.opacity(0.12), lineWidth: 1)
                     }
             }
             .buttonStyle(.plain)
@@ -205,7 +205,7 @@ struct SubscriptionTrackerView: View {
             }
         }
         .padding(20)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var summarySourceCounts: some View {
@@ -339,7 +339,7 @@ struct SubscriptionTrackerView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
-                    .background(sub.isActive ? viewModel.theme.primaryColor : .gray, in: RoundedRectangle(cornerRadius: 4))
+                    .background(sub.isActive ? viewModel.primaryColor : .gray, in: RoundedRectangle(cornerRadius: 4))
                     .offset(x: 4, y: 2)
             }
 
@@ -505,13 +505,13 @@ struct SubscriptionTrackerView: View {
         .frame(width: 44, height: 44)
         .background {
             Circle()
-                .fill(viewModel.theme.primaryColor)
+                .fill(viewModel.primaryColor)
         }
         .overlay {
             Circle()
                 .stroke(.white.opacity(isAdded ? 0.48 : 0.24), lineWidth: 1)
         }
-        .shadow(color: viewModel.theme.primaryColor.opacity(isAdded ? 0.34 : 0.22), radius: isAdded ? 14 : 10, y: 5)
+        .shadow(color: viewModel.primaryColor.opacity(isAdded ? 0.34 : 0.22), radius: isAdded ? 14 : 10, y: 5)
         .scaleEffect(isAdded ? 1.06 : 1)
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: isAdded)
     }
@@ -644,7 +644,7 @@ struct SubscriptionTrackerView: View {
             } label: {
                 Label(viewModel.loc("Add Subscription"), systemImage: "plus.circle.fill")
                     .font(.subheadline)
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
             }
         }
         .frame(maxWidth: .infinity)
@@ -674,7 +674,7 @@ struct SubscriptionTrackerView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .background(viewModel.theme.primaryColor, in: RoundedRectangle(cornerRadius: 8))
+                    .background(viewModel.primaryColor, in: RoundedRectangle(cornerRadius: 8))
             }
         }
         .frame(maxWidth: .infinity)
@@ -811,7 +811,7 @@ private struct AddSubscriptionSheet: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(viewModel.loc("Subscription Tracker"))
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
                 Text(viewModel.loc("Track recurring charges and renewal dates."))
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -819,7 +819,7 @@ private struct AddSubscriptionSheet: View {
             }
         }
         .padding(20)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var detailsCard: some View {
@@ -836,9 +836,9 @@ private struct AddSubscriptionSheet: View {
             HStack(spacing: 10) {
                 Text(CurrencyFormat.currencySymbol(for: currencyCode))
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
                     .frame(width: 38, height: 44)
-                    .background(viewModel.theme.primaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(viewModel.primaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
                 TextField("0.00", text: $amount)
                     .focused($focusedField, equals: .amount)
@@ -855,7 +855,7 @@ private struct AddSubscriptionSheet: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .tint(viewModel.theme.primaryColor)
+                .tint(viewModel.primaryColor)
             }
             .padding(10)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
@@ -873,7 +873,7 @@ private struct AddSubscriptionSheet: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
         }
     }
 
@@ -911,13 +911,13 @@ private struct AddSubscriptionSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(13)
-            .background(viewModel.theme.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            .background(viewModel.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
         }
     }
 
@@ -935,7 +935,7 @@ private struct AddSubscriptionSheet: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
         }
     }
 
@@ -959,7 +959,7 @@ private struct AddSubscriptionSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
                 .foregroundStyle(.white)
-                .premiumActionFill(tint: viewModel.theme.primaryColor, isEnabled: canSave)
+                .premiumActionFill(tint: viewModel.primaryColor, isEnabled: canSave)
             }
             .buttonStyle(.plain)
             .disabled(!canSave || isSaving)
@@ -1015,7 +1015,7 @@ private struct AddSubscriptionSheet: View {
             .foregroundStyle(isSelected ? .white : .primary)
             .background(
                 isSelected
-                    ? viewModel.theme.primaryColor
+                    ? viewModel.primaryColor
                     : Color(.secondarySystemBackground),
                 in: RoundedRectangle(cornerRadius: 8)
             )

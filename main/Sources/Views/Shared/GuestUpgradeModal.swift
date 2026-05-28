@@ -50,7 +50,7 @@ struct GuestUpgradeModal: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(viewModel.theme.primaryColor, in: RoundedRectangle(cornerRadius: 8))
+                        .background(viewModel.primaryColor, in: RoundedRectangle(cornerRadius: 8))
                     }
 
                     Button(role: .cancel) {

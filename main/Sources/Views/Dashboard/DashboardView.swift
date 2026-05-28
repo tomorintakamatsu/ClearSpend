@@ -49,7 +49,7 @@ struct DashboardView: View {
                     showHelp = true
                 } label: {
                     Image(systemName: "questionmark.circle.fill")
-                        .foregroundStyle(viewModel.theme.primaryColor)
+                        .foregroundStyle(viewModel.primaryColor)
                 }
                 .accessibilityLabel(viewModel.loc("Help"))
             }
@@ -116,7 +116,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
                     .frame(width: 24)
                 Text(title)
                     .font(.headline)
@@ -142,6 +142,6 @@ private struct QuietDashboardStartCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 }

@@ -85,13 +85,13 @@ struct ContentView: View {
                         .frame(width: 56, height: 56)
                         .background {
                             Circle()
-                                .fill(viewModel.theme.primaryColor)
+                                .fill(viewModel.primaryColor)
                         }
                         .overlay {
                             Circle()
                                 .stroke(.white.opacity(0.35), lineWidth: 1)
                         }
-                        .shadow(color: viewModel.theme.primaryColor.opacity(0.35), radius: 18, y: 8)
+                        .shadow(color: viewModel.primaryColor.opacity(0.35), radius: 18, y: 8)
                         .scaleEffect(fabScale)
                         .rotationEffect(.degrees(fabScale < 1 ? 10 : 0))
                 }
@@ -258,7 +258,7 @@ private struct MoreHeaderCard: View {
             }
         }
         .padding(22)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 }
 

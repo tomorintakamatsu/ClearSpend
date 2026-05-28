@@ -44,6 +44,7 @@
 		A71696338B9FF6E29ADE3C92 /* Budget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506CF0520D51B1C6443369A1 /* Budget.swift */; };
 		A8D6014740AB91C4F7B2F946 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CBF36A2ED45843AACDE1B7 /* Haptics.swift */; };
 		ADAB5228C70460ED567D0A2D /* Category.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B1B65BD5B57DC75FB0F57F /* Category.swift */; };
+		B2FA0C4E4B7D4F8D8CF8D901 /* WallpaperPaletteExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2FA0C4D4B7D4F8D8CF8D901 /* WallpaperPaletteExtractor.swift */; };
 		B3F49A5A08A0644B37CE4CE4 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE46F02FFB8CF859473A665 /* DashboardView.swift */; };
 		C10D18F5D54C926448DCFF58 /* AIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A2593F725A6B2C3DA68B3 /* AIClient.swift */; };
 		C8DF8B08AEBB38FE388C336C /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2C472E479FCCF33FB079F7 /* AppViewModel.swift */; };
@@ -96,6 +97,7 @@
 		ADA3E005CAC6DD73036831AF /* CacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheService.swift; sourceTree = "<group>"; };
 		B0D49DEA0045551E1391B7F1 /* TopCategoriesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopCategoriesList.swift; sourceTree = "<group>"; };
 		B2EC4BF20C85D90E1577C8C0 /* QuickStatsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStatsRow.swift; sourceTree = "<group>"; };
+		B2FA0C4D4B7D4F8D8CF8D901 /* WallpaperPaletteExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperPaletteExtractor.swift; sourceTree = "<group>"; };
 		B3B1B65BD5B57DC75FB0F57F /* Category.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Category.swift; sourceTree = "<group>"; };
 		BA11858ABCE3577C56D6C514 /* UpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpgradeView.swift; sourceTree = "<group>"; };
 		C32BD204C7795D8F7E3A23F8 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -267,6 +269,7 @@
 				CEF1EAB3D14E0F23CE542E4F /* RevenueCatService.swift */,
 				21A6DAA49B0C1B51E9769554 /* SpendCalculator.swift */,
 				ACAD16469DCAED23C21B7035 /* SubscriptionDetectionService.swift */,
+				B2FA0C4D4B7D4F8D8CF8D901 /* WallpaperPaletteExtractor.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -469,6 +472,7 @@
 				7417566F5159E1E4DD6D37DC /* User.swift in Sources */,
 				763DC154908816C597CA66C6 /* View+Extensions.swift in Sources */,
 				323EB7F7AC5320495101B4A5 /* View+Keyboard.swift in Sources */,
+				B2FA0C4E4B7D4F8D8CF8D901 /* WallpaperPaletteExtractor.swift in Sources */,
 				0D2208C074616853FAAECCDC /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

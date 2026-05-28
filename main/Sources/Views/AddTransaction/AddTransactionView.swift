@@ -121,7 +121,7 @@ struct AddTransactionView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     .overlay {
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                            .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
                     }
             }
             .buttonStyle(.plain)
@@ -141,13 +141,13 @@ struct AddTransactionView: View {
                     .padding(.vertical, 12)
                     .foregroundStyle(isSubscription ? .white : .primary)
                     .background(
-                        isSubscription ? viewModel.theme.primaryColor : Color.clear,
+                        isSubscription ? viewModel.primaryColor : Color.clear,
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     .overlay {
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(viewModel.theme.primaryColor.opacity(isSubscription ? 0 : 0.10), lineWidth: 1)
+                            .stroke(viewModel.primaryColor.opacity(isSubscription ? 0 : 0.10), lineWidth: 1)
                     }
             }
             .buttonStyle(.plain)
@@ -190,7 +190,7 @@ struct AddTransactionView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
         }
     }
 
@@ -215,7 +215,7 @@ struct AddTransactionView: View {
         }
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity)
-        .premiumPanel(tint: type == .income ? .green : viewModel.theme.primaryColor)
+        .premiumPanel(tint: type == .income ? .green : viewModel.primaryColor)
     }
 
     private var currencySelector: some View {
@@ -371,7 +371,7 @@ struct AddTransactionView: View {
             }
         }
         .padding(16)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var noteAndDate: some View {
@@ -386,7 +386,7 @@ struct AddTransactionView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                    .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
             }
 
             DatePicker(viewModel.dateLabel, selection: $date, displayedComponents: [.date, .hourAndMinute])
@@ -395,7 +395,7 @@ struct AddTransactionView: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(viewModel.theme.primaryColor.opacity(0.10), lineWidth: 1)
+                        .stroke(viewModel.primaryColor.opacity(0.10), lineWidth: 1)
                 }
         }
     }
@@ -475,10 +475,10 @@ struct AddTransactionView: View {
             }
         }
         .padding(16)
-        .background(viewModel.theme.primaryColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
+        .background(viewModel.primaryColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(viewModel.theme.primaryColor.opacity(0.18), lineWidth: 1)
+                .stroke(viewModel.primaryColor.opacity(0.18), lineWidth: 1)
         )
     }
 
@@ -524,7 +524,7 @@ struct AddTransactionView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .premiumActionFill(tint: type == .income ? .green : viewModel.theme.primaryColor, isEnabled: isValid)
+            .premiumActionFill(tint: type == .income ? .green : viewModel.primaryColor, isEnabled: isValid)
         }
         .disabled(!isValid || isSaving)
     }

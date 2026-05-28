@@ -6,25 +6,29 @@ struct SpendHeroCard: View {
     let currency: String
     let theme: AppTheme
 
+    private var tint: Color {
+        viewModel.primaryColor
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(viewModel.loc("Safe to Spend Today"))
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(theme.primaryColor)
+                        .foregroundStyle(tint)
                 }
 
                 Spacer()
 
                 Text(summary.isOverBudget ? viewModel.loc("Over budget") : viewModel.loc("On track"))
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(summary.isOverBudget ? Color(.systemRed) : theme.primaryColor)
+                    .foregroundStyle(summary.isOverBudget ? Color(.systemRed) : tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background((summary.isOverBudget ? Color(.systemRed) : theme.primaryColor).opacity(0.10), in: Capsule(style: .continuous))
+                    .background((summary.isOverBudget ? Color(.systemRed) : tint).opacity(0.10), in: Capsule(style: .continuous))
             }
 
             HStack(alignment: .center, spacing: 18) {
@@ -34,7 +38,7 @@ struct SpendHeroCard: View {
                     .currencyAmountDisplay(minScale: 0.56)
                     .layoutPriority(1)
 
-                SpendRing(progress: min(summary.spendPercent / 100, 1), tint: theme.primaryColor, isOverBudget: summary.isOverBudget)
+                SpendRing(progress: min(summary.spendPercent / 100, 1), tint: tint, isOverBudget: summary.isOverBudget)
                     .frame(width: 60, height: 60)
                     .accessibilityHidden(true)
             }
@@ -58,14 +62,14 @@ struct SpendHeroCard: View {
 
                     Text("\(Int(summary.spendPercent.rounded()))%")
                         .font(.title3.weight(.bold).monospacedDigit())
-                        .foregroundStyle(summary.isOverBudget ? Color(.systemRed) : theme.primaryColor)
+                        .foregroundStyle(summary.isOverBudget ? Color(.systemRed) : tint)
                         .lineLimit(1)
                         .minimumScaleFactor(0.76)
                 }
             }
         }
         .padding(26)
-        .premiumPanel(tint: theme.primaryColor)
+        .premiumPanel(tint: tint)
     }
 
     private var progressBar: some View {
@@ -75,7 +79,7 @@ struct SpendHeroCard: View {
                     .fill(.quaternary)
                     .frame(height: 8)
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(theme.primaryColor)
+                    .fill(tint)
                     .frame(width: geo.size.width * CGFloat(min(summary.spendPercent / 100, 1)), height: 8)
             }
         }

@@ -37,7 +37,7 @@ struct PennyLetApp: App {
                 _ = await NotificationService.shared.registerForPushNotifications()
                 viewModel.isLoading = false
             }
-            .tint(viewModel.theme.primaryColor)
+            .tint(viewModel.primaryColor)
             .preferredColorScheme(viewModel.colorMode.colorScheme)
             .fontDesign(viewModel.font.design)
             .environment(\.locale, viewModel.appLocale)

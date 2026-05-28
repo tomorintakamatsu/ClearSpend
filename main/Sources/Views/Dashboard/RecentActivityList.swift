@@ -62,7 +62,7 @@ struct RecentActivityList: View {
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
         .animation(AnimationPresets.fold, value: isExpanded)
     }
 
@@ -76,10 +76,10 @@ struct RecentActivityList: View {
                 Image(systemName: "chevron.right")
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(viewModel.theme.primaryColor)
+            .foregroundStyle(viewModel.primaryColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(viewModel.theme.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            .background(viewModel.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }

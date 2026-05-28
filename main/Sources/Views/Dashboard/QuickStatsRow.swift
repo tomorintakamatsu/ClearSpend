@@ -40,7 +40,7 @@ struct QuickStatsRow: View {
             }
         }
         .padding(14)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 }
 

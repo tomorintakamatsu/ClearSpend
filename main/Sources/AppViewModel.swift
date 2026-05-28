@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import UIKit
 
 enum AppDisplayBlock: String, CaseIterable, Hashable {
     case homeSafeToSpend
@@ -28,6 +29,8 @@ final class AppViewModel {
 
     private let prefs = UserDefaults.standard
     private let hiddenDisplayBlocksKey = "hidden_display_blocks"
+    private let wallpaperPaletteKey = "wallpaper_palette"
+    private let wallpaperFileName = "pennylet_wallpaper_theme.jpg"
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -44,6 +47,7 @@ final class AppViewModel {
         if let f = prefs.string(forKey: "app_font"), let fn = AppFont(rawValue: f) { font = fn }
         if let l = prefs.string(forKey: "app_language") { language = l }
         if let cr = prefs.string(forKey: "app_currency") { currency = cr }
+        loadWallpaperTheme()
         loadDisplayBlockPreferences()
         isDeveloperMode = prefs.bool(forKey: developerModeKey)
     }
@@ -122,6 +126,8 @@ final class AppViewModel {
 
     // Preferences (synced from Budget)
     var theme: AppTheme = .sage
+    var wallpaperPalette: WallpaperPalette?
+    var wallpaperImageData: Data?
     var colorMode: AppColorMode = .system
     var font: AppFont = .inter
     var currency: String = "USD"
@@ -129,6 +135,26 @@ final class AppViewModel {
         didSet { CurrencyFormat.language = language }
     }
     private(set) var hiddenDisplayBlocks: Set<AppDisplayBlock> = []
+
+    var primaryColor: Color {
+        wallpaperPalette?.primaryColor ?? theme.primaryColor
+    }
+
+    var accentColor: Color {
+        wallpaperPalette?.accentColor ?? theme.accentColor
+    }
+
+    var backgroundColor: Color {
+        wallpaperPalette?.backgroundColor ?? Color(.systemGroupedBackground)
+    }
+
+    var gradientColors: [Color] {
+        [primaryColor, primaryColor.opacity(0.82), accentColor.opacity(0.86)]
+    }
+
+    var hasWallpaperTheme: Bool {
+        wallpaperPalette != nil && wallpaperImageData != nil
+    }
 
     func isBlockVisible(_ block: AppDisplayBlock) -> Bool {
         !hiddenDisplayBlocks.contains(block)
@@ -267,6 +293,7 @@ final class AppViewModel {
         font = .inter
         currency = "USD"
         language = savedLanguage
+        clearWallpaperTheme()
         hiddenDisplayBlocks.removeAll()
         saveDisplayBlockPreferences()
         hasProSubscription = false
@@ -274,6 +301,61 @@ final class AppViewModel {
         let cache = CacheService.shared
         Task { await cache.clear() }
         needsResetToSetup = true
+    }
+
+    func importWallpaperTheme(from imageData: Data) async throws {
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            try WallpaperPaletteExtractor.prepareWallpaper(from: imageData)
+        }.value
+
+        wallpaperImageData = prepared.imageData
+        wallpaperPalette = prepared.palette
+        saveWallpaperTheme()
+        savePreferencesToDisk()
+    }
+
+    func clearWallpaperTheme() {
+        wallpaperImageData = nil
+        wallpaperPalette = nil
+        prefs.removeObject(forKey: wallpaperPaletteKey)
+        if let url = wallpaperFileURL() {
+            try? FileManager.default.removeItem(at: url)
+        }
+        prefs.synchronize()
+    }
+
+    private func loadWallpaperTheme() {
+        if let paletteData = prefs.data(forKey: wallpaperPaletteKey),
+           let palette = try? JSONDecoder().decode(WallpaperPalette.self, from: paletteData) {
+            wallpaperPalette = palette
+        }
+
+        if let url = wallpaperFileURL(),
+           let data = try? Data(contentsOf: url),
+           UIImage(data: data) != nil {
+            wallpaperImageData = data
+        }
+    }
+
+    private func saveWallpaperTheme() {
+        if let palette = wallpaperPalette,
+           let paletteData = try? JSONEncoder().encode(palette) {
+            prefs.set(paletteData, forKey: wallpaperPaletteKey)
+        }
+
+        guard let wallpaperImageData,
+              let url = wallpaperFileURL() else { return }
+        try? wallpaperImageData.write(to: url, options: [.atomic])
+    }
+
+    private func wallpaperFileURL() -> URL? {
+        guard let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+
+        let folder = baseURL.appendingPathComponent("PennyLet", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent(wallpaperFileName)
     }
 
     func requestNotificationPermission() {

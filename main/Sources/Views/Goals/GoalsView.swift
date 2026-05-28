@@ -24,7 +24,7 @@ struct GoalsView: View {
                 )
             } else {
                 ForEach(Array(viewModel.goals.enumerated()), id: \.element.id) { index, goal in
-                    GoalRow(goal: goal, currency: viewModel.currency, theme: viewModel.theme)
+                    GoalRow(goal: goal, currency: viewModel.currency, tint: viewModel.primaryColor)
                         .staggeredEntrance(index: index)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
@@ -48,7 +48,7 @@ struct GoalsView: View {
                 showAddSheet = true
             } label: {
                 Image(systemName: "plus.circle.fill")
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
             }
         }
         .sheet(isPresented: $showAddSheet) {
@@ -121,14 +121,14 @@ private struct GoalsHeroCard: View {
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 }
 
 struct GoalRow: View {
     let goal: Goal
     let currency: String
-    let theme: AppTheme
+    let tint: Color
     @Environment(AppViewModel.self) private var viewModel
     @State private var showsControls = false
 
@@ -167,7 +167,7 @@ struct GoalRow: View {
                         .fill(.quaternary)
                         .frame(height: 10)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(theme.primaryColor)
+                        .fill(tint)
                         .frame(width: geo.size.width * CGFloat(goal.progress), height: 10)
                 }
             }
@@ -185,10 +185,10 @@ struct GoalRow: View {
                     Image(systemName: showsControls ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.bold))
                 }
-                .foregroundStyle(theme.primaryColor)
+                .foregroundStyle(tint)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(theme.primaryColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -203,7 +203,7 @@ struct GoalRow: View {
             }
         }
         .padding(16)
-        .premiumPanel(tint: theme.primaryColor)
+        .premiumPanel(tint: tint)
         .animation(AnimationPresets.fold, value: showsControls)
     }
 
@@ -220,26 +220,26 @@ struct GoalRow: View {
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(GoalQuickAddButtonStyle(theme: theme))
+        .buttonStyle(GoalQuickAddButtonStyle(tint: tint))
     }
 }
 
 private struct GoalQuickAddButtonStyle: ButtonStyle {
-    let theme: AppTheme
+    let tint: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(configuration.isPressed ? .white : theme.primaryColor)
+            .foregroundStyle(configuration.isPressed ? .white : tint)
             .background(
-                configuration.isPressed ? theme.primaryColor : theme.primaryColor.opacity(0.10),
+                configuration.isPressed ? tint : tint.opacity(0.10),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(theme.primaryColor.opacity(configuration.isPressed ? 0.0 : 0.16), lineWidth: 1)
+                    .stroke(tint.opacity(configuration.isPressed ? 0.0 : 0.16), lineWidth: 1)
             }
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .shadow(color: configuration.isPressed ? theme.primaryColor.opacity(0.18) : .clear, radius: 10, y: 5)
+            .shadow(color: configuration.isPressed ? tint.opacity(0.18) : .clear, radius: 10, y: 5)
             .animation(.spring(response: 0.22, dampingFraction: 0.72), value: configuration.isPressed)
     }
 }

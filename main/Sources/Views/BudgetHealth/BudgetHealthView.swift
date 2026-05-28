@@ -41,7 +41,7 @@ struct BudgetHealthView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(viewModel.loc("Monthly Disposable"))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(viewModel.theme.primaryColor)
+                        .foregroundStyle(viewModel.primaryColor)
                     Text(CurrencyFormat.format(summary.monthlyDisposable, currency: viewModel.currency))
                         .font(.system(size: 46, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
@@ -68,13 +68,13 @@ struct BudgetHealthView: View {
                 Spacer(minLength: 8)
                 Text(CurrencyFormat.format(summary.remaining, currency: viewModel.currency))
                     .font(.headline.weight(.bold).monospacedDigit())
-                    .foregroundStyle(summary.isOverBudget ? .red : viewModel.theme.primaryColor)
+                    .foregroundStyle(summary.isOverBudget ? .red : viewModel.primaryColor)
                     .currencyAmountDisplay(minScale: 0.54)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var pieChartSection: some View {
@@ -124,7 +124,7 @@ struct BudgetHealthView: View {
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var barChartSection: some View {
@@ -163,7 +163,7 @@ struct BudgetHealthView: View {
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var statCardsSection: some View {
@@ -177,12 +177,12 @@ struct BudgetHealthView: View {
 
             HStack(spacing: 12) {
                 statCard(viewModel.loc("Remaining"), value: summary.remaining, color: summary.isOverBudget ? .red : .green)
-                statCard(viewModel.loc("Safe Daily"), value: summary.safeDaily, color: viewModel.theme.primaryColor)
+                statCard(viewModel.loc("Safe Daily"), value: summary.safeDaily, color: viewModel.primaryColor)
                 statCard(viewModel.loc("Days Left"), value: Double(summary.daysLeft), color: .blue, isWhole: true)
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private func statCard(_ title: String, value: Double, color: Color, isWhole: Bool = false) -> some View {

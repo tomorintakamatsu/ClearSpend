@@ -77,7 +77,7 @@ struct AIFeaturesView: View {
                         if let date = item.analysisDate ?? item.createdDate {
                             Text(formatDate(date))
                                 .font(.subheadline.weight(.medium))
-                                .foregroundStyle(viewModel.theme.primaryColor)
+                                .foregroundStyle(viewModel.primaryColor)
                         }
                         Text(item.content)
                             .font(.body)
@@ -133,7 +133,7 @@ struct AIFeaturesView: View {
             }
         }
         .padding(18)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var dailyTab: some View {
@@ -282,7 +282,7 @@ struct AIFeaturesView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 24)
                                 .padding(.vertical, 12)
-                                .premiumActionFill(tint: viewModel.theme.primaryColor)
+                                .premiumActionFill(tint: viewModel.primaryColor)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -319,7 +319,7 @@ struct AIFeaturesView: View {
             }
 
             ProgressView(value: Double(used), total: Double(limit))
-                .tint(remaining > 0 ? viewModel.theme.primaryColor : Color.orange)
+                .tint(remaining > 0 ? viewModel.primaryColor : Color.orange)
                 .scaleEffect(x: 1, y: 0.7)
         }
         .padding(.horizontal, 12)
@@ -375,7 +375,7 @@ struct AIFeaturesView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(progressTitle(for: tab))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(viewModel.theme.primaryColor)
+                        .foregroundStyle(viewModel.primaryColor)
                     Text(viewModel.loc(progressPhaseTitleKey(for: phase, tab: tab)))
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.primary)
@@ -393,17 +393,17 @@ struct AIFeaturesView: View {
             HStack {
                 Text(progressStepText(for: phase))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .foregroundStyle(viewModel.primaryColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(viewModel.theme.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                    .background(viewModel.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
 
                 Spacer()
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(progressTitle(for: tab)), \(progressStepText(for: phase))")
         .accessibilityValue("\(viewModel.loc(progressPhaseTitleKey(for: phase, tab: tab))). \(viewModel.loc(progressPhaseDetailKey(for: phase)))")
@@ -442,7 +442,7 @@ struct AIFeaturesView: View {
                 }
             }
             .padding(20)
-            .premiumPanel(tint: viewModel.theme.primaryColor)
+            .premiumPanel(tint: viewModel.primaryColor)
 
             Button {
                 generateAgain(for: tab)
@@ -452,7 +452,7 @@ struct AIFeaturesView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .foregroundStyle(.white)
-                    .premiumActionFill(tint: viewModel.theme.primaryColor)
+                    .premiumActionFill(tint: viewModel.primaryColor)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(viewModel.loc("Generate Again"))
@@ -558,7 +558,7 @@ struct AIFeaturesView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .premiumActionFill(tint: viewModel.theme.primaryColor)
+                    .premiumActionFill(tint: viewModel.primaryColor)
             }
         }
         .frame(maxWidth: .infinity)
@@ -608,7 +608,7 @@ struct AIFeaturesView: View {
                                 if let date = item.analysisDate ?? item.createdDate {
                                     Text(formatDate(date))
                                         .font(.caption.weight(.medium))
-                                        .foregroundStyle(viewModel.theme.primaryColor)
+                                        .foregroundStyle(viewModel.primaryColor)
                                 }
                                 Text(item.content)
                                     .font(.caption)
@@ -633,7 +633,7 @@ struct AIFeaturesView: View {
                 }
             }
             .padding(16)
-            .premiumPanel(tint: viewModel.theme.primaryColor)
+            .premiumPanel(tint: viewModel.primaryColor)
             .animation(AnimationPresets.fold, value: showsHistory)
         }
     }

@@ -109,7 +109,7 @@ struct ReceiptScannerView: View {
     }
 
     private var emptyState: some View {
-        let tint = viewModel.theme.primaryColor
+        let tint = viewModel.primaryColor
         let scanReceiptLabel = viewModel.loc("Scan Receipt")
         let choosePhotoLabel = viewModel.loc("Choose Photo")
 
@@ -203,7 +203,7 @@ struct ReceiptScannerView: View {
                     Spacer()
                     Text(CurrencyFormat.format(lineItemTotal, currency: viewModel.currency))
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(viewModel.theme.primaryColor)
+                        .foregroundStyle(viewModel.primaryColor)
                         .currencyAmountDisplay(minScale: 0.54)
                 }
                 .padding(.top, 4)
@@ -233,7 +233,7 @@ struct ReceiptScannerView: View {
             .font(.subheadline)
         }
         .padding(16)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
         .keyboardDoneButton(viewModel.loc("Done"))
     }
 

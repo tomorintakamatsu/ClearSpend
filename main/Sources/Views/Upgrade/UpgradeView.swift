@@ -53,7 +53,7 @@ struct UpgradeView: View {
                     Button(viewModel.loc("Restore Purchases")) {
                         Task { await restore() }
                     }
-                    .font(.subheadline).foregroundStyle(viewModel.theme.primaryColor)
+                    .font(.subheadline).foregroundStyle(viewModel.primaryColor)
 
                     if let msg = restoreMessage {
                         Text(msg).font(.caption)

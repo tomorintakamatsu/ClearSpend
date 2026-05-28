@@ -177,7 +177,7 @@ private struct ActivitySummaryCard: View {
             summaryDetails
         }
         .padding(20)
-        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 
     private var transactionCountText: String {
