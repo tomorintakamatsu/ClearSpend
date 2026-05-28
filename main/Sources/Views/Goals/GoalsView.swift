@@ -17,11 +17,12 @@ struct GoalsView: View {
             }
 
             if viewModel.goals.isEmpty {
-                ContentUnavailableView(
-                    viewModel.loc("No Goals Yet"),
-                    systemImage: "target",
-                    description: Text(viewModel.loc("Set savings goals to track your progress"))
-                )
+                Section {
+                    GoalsEmptyCard()
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+                        .listRowBackground(Color.clear)
+                }
             } else {
                 ForEach(Array(viewModel.goals.enumerated()), id: \.element.id) { index, goal in
                     GoalRow(goal: goal, currency: viewModel.currency, tint: viewModel.primaryColor)
@@ -73,6 +74,31 @@ struct GoalsView: View {
         } message: {
             Text(viewModel.loc("This cannot be undone."))
         }
+    }
+}
+
+private struct GoalsEmptyCard: View {
+    @Environment(AppViewModel.self) private var viewModel
+
+    var body: some View {
+        HStack(spacing: 14) {
+            PennyLetIconTile(symbol: "target", tint: Color(.systemIndigo), size: 46, shape: .circle, isProminent: true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(viewModel.loc("No Goals Yet"))
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text(viewModel.loc("Set savings goals to track your progress"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .premiumPanel(tint: viewModel.primaryColor)
     }
 }
 

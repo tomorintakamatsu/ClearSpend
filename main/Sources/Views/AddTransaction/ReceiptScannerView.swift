@@ -65,7 +65,7 @@ struct ReceiptScannerView: View {
                 }
             }
             .padding()
-            .clearSpendScreenBackground(theme: viewModel.theme)
+            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
             .navigationTitle(viewModel.loc("Scan Receipt"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

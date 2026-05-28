@@ -769,7 +769,7 @@ private struct AddSubscriptionSheet: View {
                 .padding(.bottom, 110)
             }
             .scrollDismissesKeyboard(.interactively)
-            .clearSpendScreenBackground(theme: viewModel.theme)
+            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
             .navigationTitle(viewModel.loc("New Subscription"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

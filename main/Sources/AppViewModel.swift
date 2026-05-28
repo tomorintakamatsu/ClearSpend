@@ -34,6 +34,9 @@ final class AppViewModel {
     private let wallpaperVisibilityKey = "wallpaper_visibility"
     private let wallpaperBlurRadiusKey = "wallpaper_blur_radius"
     private let wallpaperPanelOpacityKey = "wallpaper_panel_opacity"
+    private let wallpaperZoomPercentKey = "wallpaper_zoom_percent"
+    private let wallpaperHorizontalFrameKey = "wallpaper_horizontal_frame"
+    private let wallpaperVerticalFrameKey = "wallpaper_vertical_frame"
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -132,9 +135,13 @@ final class AppViewModel {
     var theme: AppTheme = .sage
     var wallpaperPalette: WallpaperPalette?
     var wallpaperImageData: Data?
-    var wallpaperVisibility: Double = 0.78
-    var wallpaperBlurRadius: Double = 3
-    var wallpaperPanelOpacity: Double = 0.62
+    var wallpaperUIImage: UIImage?
+    var wallpaperVisibility: Double = 84
+    var wallpaperBlurRadius: Double = 6
+    var wallpaperPanelOpacity: Double = 64
+    var wallpaperZoomPercent: Double = 0
+    var wallpaperHorizontalFrame: Double = 50
+    var wallpaperVerticalFrame: Double = 50
     var colorMode: AppColorMode = .system
     var font: AppFont = .inter
     var currency: String = "USD"
@@ -160,7 +167,30 @@ final class AppViewModel {
     }
 
     var hasWallpaperTheme: Bool {
-        wallpaperPalette != nil && wallpaperImageData != nil
+        wallpaperPalette != nil && wallpaperImageData != nil && wallpaperUIImage != nil
+    }
+
+    var wallpaperVisibilityOpacity: Double {
+        clampedPercent(wallpaperVisibility) / 100
+    }
+
+    var wallpaperPanelOpacityValue: Double {
+        clampedPercent(wallpaperPanelOpacity) / 100
+    }
+
+    var wallpaperZoomScale: CGFloat {
+        1.04 + CGFloat(clampedPercent(wallpaperZoomPercent) / 100 * 0.96)
+    }
+
+    var wallpaperBlurValue: CGFloat {
+        CGFloat(clampedPercent(wallpaperBlurRadius))
+    }
+
+    func wallpaperFrameOffset(in size: CGSize) -> CGSize {
+        let horizontal = (clampedPercent(wallpaperHorizontalFrame) - 50) / 50
+        let vertical = (clampedPercent(wallpaperVerticalFrame) - 50) / 50
+        let travel = 0.02 + (clampedPercent(wallpaperZoomPercent) / 100 * 0.32)
+        return CGSize(width: size.width * travel * horizontal, height: size.height * travel * vertical)
     }
 
     func isBlockVisible(_ block: AppDisplayBlock) -> Bool {
@@ -316,6 +346,7 @@ final class AppViewModel {
         }.value
 
         wallpaperImageData = prepared.imageData
+        wallpaperUIImage = UIImage(data: prepared.imageData)
         wallpaperPalette = prepared.palette
         saveWallpaperTheme()
         savePreferencesToDisk()
@@ -323,6 +354,7 @@ final class AppViewModel {
 
     func clearWallpaperTheme() {
         wallpaperImageData = nil
+        wallpaperUIImage = nil
         wallpaperPalette = nil
         resetWallpaperAppearance()
         prefs.removeObject(forKey: wallpaperPaletteKey)
@@ -340,8 +372,9 @@ final class AppViewModel {
 
         if let url = wallpaperFileURL(),
            let data = try? Data(contentsOf: url),
-           UIImage(data: data) != nil {
+           let image = UIImage(data: data) {
             wallpaperImageData = data
+            wallpaperUIImage = image
         }
     }
 
@@ -349,28 +382,55 @@ final class AppViewModel {
         prefs.set(wallpaperVisibility, forKey: wallpaperVisibilityKey)
         prefs.set(wallpaperBlurRadius, forKey: wallpaperBlurRadiusKey)
         prefs.set(wallpaperPanelOpacity, forKey: wallpaperPanelOpacityKey)
+        prefs.set(wallpaperZoomPercent, forKey: wallpaperZoomPercentKey)
+        prefs.set(wallpaperHorizontalFrame, forKey: wallpaperHorizontalFrameKey)
+        prefs.set(wallpaperVerticalFrame, forKey: wallpaperVerticalFrameKey)
         prefs.synchronize()
     }
 
     private func loadWallpaperAppearance() {
         if prefs.object(forKey: wallpaperVisibilityKey) != nil {
-            wallpaperVisibility = prefs.double(forKey: wallpaperVisibilityKey)
+            wallpaperVisibility = normalizedStoredPercent(prefs.double(forKey: wallpaperVisibilityKey))
         }
         if prefs.object(forKey: wallpaperBlurRadiusKey) != nil {
-            wallpaperBlurRadius = prefs.double(forKey: wallpaperBlurRadiusKey)
+            wallpaperBlurRadius = clampedPercent(prefs.double(forKey: wallpaperBlurRadiusKey))
         }
         if prefs.object(forKey: wallpaperPanelOpacityKey) != nil {
-            wallpaperPanelOpacity = prefs.double(forKey: wallpaperPanelOpacityKey)
+            wallpaperPanelOpacity = normalizedStoredPercent(prefs.double(forKey: wallpaperPanelOpacityKey))
+        }
+        if prefs.object(forKey: wallpaperZoomPercentKey) != nil {
+            wallpaperZoomPercent = clampedPercent(prefs.double(forKey: wallpaperZoomPercentKey))
+        }
+        if prefs.object(forKey: wallpaperHorizontalFrameKey) != nil {
+            wallpaperHorizontalFrame = clampedPercent(prefs.double(forKey: wallpaperHorizontalFrameKey))
+        }
+        if prefs.object(forKey: wallpaperVerticalFrameKey) != nil {
+            wallpaperVerticalFrame = clampedPercent(prefs.double(forKey: wallpaperVerticalFrameKey))
         }
     }
 
     private func resetWallpaperAppearance() {
-        wallpaperVisibility = 0.78
-        wallpaperBlurRadius = 3
-        wallpaperPanelOpacity = 0.62
+        wallpaperVisibility = 84
+        wallpaperBlurRadius = 6
+        wallpaperPanelOpacity = 64
+        wallpaperZoomPercent = 0
+        wallpaperHorizontalFrame = 50
+        wallpaperVerticalFrame = 50
         prefs.removeObject(forKey: wallpaperVisibilityKey)
         prefs.removeObject(forKey: wallpaperBlurRadiusKey)
         prefs.removeObject(forKey: wallpaperPanelOpacityKey)
+        prefs.removeObject(forKey: wallpaperZoomPercentKey)
+        prefs.removeObject(forKey: wallpaperHorizontalFrameKey)
+        prefs.removeObject(forKey: wallpaperVerticalFrameKey)
+    }
+
+    private func normalizedStoredPercent(_ value: Double) -> Double {
+        let percentValue = value <= 1 ? value * 100 : value
+        return clampedPercent(percentValue)
+    }
+
+    private func clampedPercent(_ value: Double) -> Double {
+        min(max(value, 0), 100)
     }
 
     private func saveWallpaperTheme() {

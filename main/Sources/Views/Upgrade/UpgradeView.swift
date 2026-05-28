@@ -72,7 +72,7 @@ struct UpgradeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             }
-            .clearSpendScreenBackground(theme: viewModel.theme)
+            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
             .navigationTitle(viewModel.loc("Upgrade"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -68,7 +68,7 @@ struct GuestUpgradeModal: View {
             }
             .padding(.top, 20)
             .padding(.bottom, 40)
-            .clearSpendScreenBackground(theme: viewModel.theme)
+            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(viewModel.cancelLabel) { dismiss() }

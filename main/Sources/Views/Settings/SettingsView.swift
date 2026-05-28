@@ -55,7 +55,7 @@ struct SettingsView: View {
             }
             legalSection
         }
-        .clearSpendScreenBackground(theme: viewModel.theme)
+        .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
         .navigationTitle(viewModel.settingsTitle)
         .navigationBarTitleDisplayMode(.inline)
         .keyboardDoneButton(viewModel.loc("Done"))
@@ -204,20 +204,10 @@ struct SettingsView: View {
                 Spacer()
             }
 
-            if let data = viewModel.wallpaperImageData,
-               let image = UIImage(data: data) {
-                HStack(spacing: 12) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 110, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(.white.opacity(0.28), lineWidth: 1)
-                        }
-                        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+            if let image = viewModel.wallpaperUIImage {
+                wallpaperFramePreview(image)
 
+                HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(viewModel.loc("Wallpaper colors active"))
                             .font(.caption.weight(.semibold))
@@ -237,31 +227,54 @@ struct SettingsView: View {
                         viewModel.loc("Wallpaper visibility"),
                         value: Binding(
                             get: { viewModel.wallpaperVisibility },
-                            set: { viewModel.wallpaperVisibility = $0; viewModel.saveWallpaperAppearance() }
-                        ),
-                        range: 0.35...0.95,
-                        format: { "\(Int($0 * 100))%" }
+                            set: { viewModel.wallpaperVisibility = $0 }
+                        )
                     )
 
                     wallpaperSlider(
                         viewModel.loc("Wallpaper blur"),
                         value: Binding(
                             get: { viewModel.wallpaperBlurRadius },
-                            set: { viewModel.wallpaperBlurRadius = $0; viewModel.saveWallpaperAppearance() }
-                        ),
-                        range: 0...18,
-                        step: 1,
-                        format: { "\(Int($0))" }
+                            set: { viewModel.wallpaperBlurRadius = $0 }
+                        )
                     )
 
                     wallpaperSlider(
                         viewModel.loc("Card opacity"),
                         value: Binding(
                             get: { viewModel.wallpaperPanelOpacity },
-                            set: { viewModel.wallpaperPanelOpacity = $0; viewModel.saveWallpaperAppearance() }
-                        ),
-                        range: 0.42...0.90,
-                        format: { "\(Int($0 * 100))%" }
+                            set: { viewModel.wallpaperPanelOpacity = $0 }
+                        )
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(viewModel.loc("Wallpaper frame"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.primary)
+
+                    wallpaperSlider(
+                        viewModel.loc("Zoom"),
+                        value: Binding(
+                            get: { viewModel.wallpaperZoomPercent },
+                            set: { viewModel.wallpaperZoomPercent = $0 }
+                        )
+                    )
+
+                    wallpaperSlider(
+                        viewModel.loc("Horizontal frame"),
+                        value: Binding(
+                            get: { viewModel.wallpaperHorizontalFrame },
+                            set: { viewModel.wallpaperHorizontalFrame = $0 }
+                        )
+                    )
+
+                    wallpaperSlider(
+                        viewModel.loc("Vertical frame"),
+                        value: Binding(
+                            get: { viewModel.wallpaperVerticalFrame },
+                            set: { viewModel.wallpaperVerticalFrame = $0 }
+                        )
                     )
                 }
             }
@@ -321,31 +334,79 @@ struct SettingsView: View {
             }
     }
 
+    private func wallpaperFramePreview(_ image: UIImage) -> some View {
+        GeometryReader { proxy in
+            let offset = viewModel.wallpaperFrameOffset(in: proxy.size)
+
+            ZStack {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .scaleEffect(viewModel.wallpaperZoomScale)
+                    .offset(x: offset.width, y: offset.height)
+                    .clipped()
+                    .blur(radius: viewModel.wallpaperBlurValue)
+                    .opacity(viewModel.wallpaperVisibilityOpacity)
+
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.08),
+                        Color.clear,
+                        viewModel.primaryColor.opacity(0.10)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground).opacity(viewModel.wallpaperPanelOpacityValue))
+                        .frame(width: proxy.size.width * 0.58, height: 34)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground).opacity(viewModel.wallpaperPanelOpacityValue * 0.82))
+                        .frame(width: proxy.size.width * 0.42, height: 24)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(14)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(.white.opacity(0.24), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+        }
+        .frame(height: 190)
+    }
+
     private func wallpaperSlider(
         _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        step: Double? = nil,
-        format: @escaping (Double) -> String
+        value: Binding<Double>
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let clampedValue = Binding<Double>(
+            get: { min(max(value.wrappedValue, 0), 100) },
+            set: { value.wrappedValue = min(max($0, 0), 100) }
+        )
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(format(value.wrappedValue))
+                Text("\(Int(clampedValue.wrappedValue.rounded()))%")
                     .font(.caption.weight(.bold).monospacedDigit())
                     .foregroundStyle(viewModel.primaryColor)
             }
 
-            if let step {
-                Slider(value: value, in: range, step: step)
-                    .tint(viewModel.primaryColor)
-            } else {
-                Slider(value: value, in: range)
-                    .tint(viewModel.primaryColor)
+            Slider(value: clampedValue, in: 0...100) { isEditing in
+                if !isEditing {
+                    viewModel.saveWallpaperAppearance()
+                    Haptics.selection()
+                }
             }
+            .tint(viewModel.primaryColor)
         }
     }
 

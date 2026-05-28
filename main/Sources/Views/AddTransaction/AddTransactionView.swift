@@ -79,7 +79,7 @@ struct AddTransactionView: View {
                 .padding(.top, 14)
                 .padding(.bottom, 40)
             }
-            .clearSpendScreenBackground(theme: viewModel.theme)
+            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
             .navigationTitle(viewModel.addTransactionTitle)
             .navigationBarTitleDisplayMode(.inline)
             .keyboardDoneButton(viewModel.loc("Done"))

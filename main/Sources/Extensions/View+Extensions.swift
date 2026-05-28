@@ -20,10 +20,11 @@ extension View {
             .premiumPanel(tint: tint)
     }
 
-    func clearSpendScreenBackground(theme: AppTheme) -> some View {
+    func clearSpendScreenBackground(theme: AppTheme, allowsWallpaper: Bool = true) -> some View {
         background {
-            PennyLetSurfaceBackground(theme: theme)
+            PennyLetSurfaceBackground(theme: theme, allowsWallpaper: allowsWallpaper)
         }
+        .environment(\.pennyLetAllowsWallpaperSurfaces, allowsWallpaper)
         .scrollContentBackground(.hidden)
     }
 
@@ -49,16 +50,29 @@ extension View {
     }
 }
 
+private struct PennyLetAllowsWallpaperSurfacesKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+private extension EnvironmentValues {
+    var pennyLetAllowsWallpaperSurfaces: Bool {
+        get { self[PennyLetAllowsWallpaperSurfacesKey.self] }
+        set { self[PennyLetAllowsWallpaperSurfacesKey.self] = newValue }
+    }
+}
+
 private struct PremiumPanelModifier: ViewModifier {
     @Environment(AppViewModel.self) private var viewModel
+    @Environment(\.pennyLetAllowsWallpaperSurfaces) private var allowsWallpaperSurfaces
     let tint: Color?
 
     func body(content: Content) -> some View {
         let activeTint = tint ?? Color.primary
-        let panelOpacity = viewModel.hasWallpaperTheme ? viewModel.wallpaperPanelOpacity : 1
-        let tintOpacity = viewModel.hasWallpaperTheme ? 0.052 : 0.018
-        let separatorOpacity = viewModel.hasWallpaperTheme ? 0.12 : 0.08
-        let shadowOpacity = viewModel.hasWallpaperTheme ? 0.085 : 0.035
+        let wallpaperPanelsActive = allowsWallpaperSurfaces && viewModel.hasWallpaperTheme
+        let panelOpacity = wallpaperPanelsActive ? viewModel.wallpaperPanelOpacityValue : 1
+        let tintOpacity = wallpaperPanelsActive ? 0.05 * max(panelOpacity, 0.18) : 0.018
+        let separatorOpacity = wallpaperPanelsActive ? 0.13 : 0.08
+        let shadowOpacity = wallpaperPanelsActive ? 0.09 : 0.035
 
         content
             .background {
@@ -75,42 +89,50 @@ private struct PremiumPanelModifier: ViewModifier {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(activeTint.opacity(viewModel.hasWallpaperTheme ? 0.13 : 0.08), lineWidth: 1)
+                    .stroke(activeTint.opacity(wallpaperPanelsActive ? 0.14 : 0.08), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(shadowOpacity), radius: viewModel.hasWallpaperTheme ? 18 : 14, y: 5)
+            .shadow(color: .black.opacity(shadowOpacity), radius: wallpaperPanelsActive ? 18 : 14, y: 5)
     }
 }
 
 private struct PennyLetSurfaceBackground: View {
     @Environment(AppViewModel.self) private var viewModel
     let theme: AppTheme
+    let allowsWallpaper: Bool
 
     var body: some View {
         ZStack {
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
 
-            if let data = viewModel.wallpaperImageData,
-               let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .ignoresSafeArea()
-                    .blur(radius: viewModel.wallpaperBlurRadius)
-                    .saturation(1.04)
-                    .contrast(0.92)
-                    .opacity(viewModel.wallpaperVisibility)
-                    .accessibilityHidden(true)
+            if allowsWallpaper, let image = viewModel.wallpaperUIImage {
+                GeometryReader { proxy in
+                    let offset = viewModel.wallpaperFrameOffset(in: proxy.size)
+
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .scaleEffect(viewModel.wallpaperZoomScale)
+                        .offset(x: offset.width, y: offset.height)
+                        .clipped()
+                        .blur(radius: viewModel.wallpaperBlurValue)
+                        .saturation(1.04)
+                        .contrast(0.92)
+                        .opacity(viewModel.wallpaperVisibilityOpacity)
+                        .accessibilityHidden(true)
+                }
+                .ignoresSafeArea()
 
                 Color(.systemGroupedBackground)
-                    .opacity(0.18)
+                    .opacity(0.14)
                     .ignoresSafeArea()
 
                 LinearGradient(
                     colors: [
-                        viewModel.primaryColor.opacity(0.13),
+                        viewModel.primaryColor.opacity(0.10),
                         Color(.clear),
-                        viewModel.accentColor.opacity(0.11)
+                        viewModel.accentColor.opacity(0.08)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
