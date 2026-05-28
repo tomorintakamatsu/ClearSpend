@@ -8,6 +8,8 @@ struct SubscriptionTrackerView: View {
     @State private var showAddSubscription = false
     @State private var scanMessage = ""
     @State private var inferredSubs: [SubscriptionDetectionService.InferredSubscription] = []
+    @State private var addingInferredSubscriptionIDs: Set<String> = []
+    @State private var addedInferredSubscriptionIDs: Set<String> = []
 
     private var manualSubs: [RecurringSubscription] {
         viewModel.recurringSubscriptions.filter(\.isActive)
@@ -21,10 +23,15 @@ struct SubscriptionTrackerView: View {
         return inferredSubs.filter { !existingNames.contains(normalizedName($0.name)) }
     }
 
+    private let averageDaysPerMonth = 365.2425 / 12.0
+    private let weeksPerMonth = (365.2425 / 12.0) / 7.0
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                summaryCard
+                if viewModel.isBlockVisible(.subscriptionsOverview) {
+                    summaryCard
+                }
 
                 actionBar
 
@@ -32,7 +39,7 @@ struct SubscriptionTrackerView: View {
                     manualList
                 }
 
-                if !suggestedSubs.isEmpty {
+                if viewModel.isBlockVisible(.subscriptionsSuggestions), !suggestedSubs.isEmpty {
                     suggestedList
                 }
 
@@ -71,18 +78,7 @@ struct SubscriptionTrackerView: View {
             .padding(.bottom, 40)
         }
         .navigationTitle(viewModel.loc("Subscriptions"))
-        .background(
-            LinearGradient(
-                colors: [
-                    viewModel.theme.primaryColor.opacity(0.12),
-                    viewModel.theme.accentColor.opacity(0.07),
-                    Color(.systemBackground)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
+        .clearSpendScreenBackground(theme: viewModel.theme)
         .task {
             if !hasScanned {
                 await scanSubs()
@@ -125,22 +121,13 @@ struct SubscriptionTrackerView: View {
             } label: {
                 Label(viewModel.loc("Add Subscription"), systemImage: "plus.circle.fill")
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                     .foregroundStyle(.white)
-                    .background(
-                        LinearGradient(
-                            colors: [viewModel.theme.primaryColor, viewModel.theme.accentColor],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(.white.opacity(0.25), lineWidth: 1)
-                    }
-                    .shadow(color: viewModel.theme.primaryColor.opacity(0.24), radius: 14, y: 8)
+                    .premiumActionFill(tint: viewModel.theme.primaryColor)
             }
             .buttonStyle(.plain)
 
@@ -149,6 +136,9 @@ struct SubscriptionTrackerView: View {
             } label: {
                 Label(viewModel.loc("Scan Again"), systemImage: "arrow.clockwise")
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -166,70 +156,94 @@ struct SubscriptionTrackerView: View {
         let activeDetected = detectedSubs.filter(\.isActive)
         let totalCount = activeDetected.count + manualSubs.count
 
-        return VStack(alignment: .leading, spacing: 18) {
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(viewModel.loc("Active Subscriptions"))
                         .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary)
                     Text("\(totalCount) \(viewModel.loc("tracked"))")
+                        .font(.headline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                PennyLetIconTile(symbol: "creditcard.fill", tint: Color(.systemTeal), size: 42, shape: .circle, isProminent: true)
+            }
+
+            summarySourceCounts
+
+            VStack(alignment: .leading, spacing: 10) {
+                if currencyTotals.isEmpty {
+                    Text(viewModel.loc("No App Store subscriptions found"))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.72))
-                }
-
-                Spacer()
-
-                Image(systemName: "creditcard.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
-            }
-
-            if currencyTotals.isEmpty {
-                Text(viewModel.loc("Add manual subscriptions or scan App Store purchases to track renewals."))
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.76))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ForEach(currencyTotals, id: \.currency) { item in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(item.currency)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.white.opacity(0.68))
-                        Spacer()
-                        Text(item.formattedMonthly)
-                            .font(.title2.weight(.bold))
-                        Text("/\(viewModel.loc("mo"))")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(currencyTotals, id: \.currency) { item in
+                        HStack(alignment: .center, spacing: 10) {
+                            Text(item.currency)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(item.formattedMonthly)
+                                    .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
+                                    .currencyAmountDisplay(minScale: 0.54)
+                                Text("/\(viewModel.loc("mo"))")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .layoutPriority(1)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
                 }
             }
         }
-        .foregroundStyle(.white)
         .padding(20)
-        .background(
-            LinearGradient(
-                colors: [
-                    viewModel.theme.primaryColor,
-                    viewModel.theme.primaryColor.opacity(0.82),
-                    viewModel.theme.accentColor.opacity(0.88)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay(alignment: .bottomTrailing) {
-            Image(systemName: "repeat.circle.fill")
-                .font(.system(size: 96))
-                .foregroundStyle(.white.opacity(0.09))
-                .offset(x: 20, y: 22)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
+    }
+
+    private var summarySourceCounts: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            summaryCountPill(
+                title: viewModel.loc("App Store subscriptions"),
+                count: detectedSubs.filter(\.isActive).count,
+                color: Color(.systemBlue)
+            )
+            summaryCountPill(
+                title: viewModel.loc("Manual subscriptions"),
+                count: manualSubs.count,
+                color: Color(.systemTeal)
+            )
+            summaryCountPill(
+                title: viewModel.loc("Suggested subscriptions"),
+                count: suggestedSubs.count,
+                color: Color(.systemOrange)
+            )
         }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.22), radius: 20, y: 10)
+    }
+
+    private func summaryCountPill(title: String, count: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(count)")
+                .font(.title3.weight(.bold).monospacedDigit())
+                .foregroundStyle(color)
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var currencyTotals: [(currency: String, formattedMonthly: String, count: Int)] {
@@ -242,8 +256,7 @@ struct SubscriptionTrackerView: View {
         let grouped = Dictionary(grouping: values, by: { $0.currency })
         return grouped.map { code, subs in
             let monthly = subs.reduce(0.0) { $0 + $1.monthly }
-            let sym = currencySymbol(code)
-            return (code, String(format: "\(sym)%.2f", monthly), subs.count)
+            return (code, CurrencyFormat.format(monthly, currency: code), subs.count)
         }.sorted { $0.currency < $1.currency }
     }
 
@@ -312,16 +325,15 @@ struct SubscriptionTrackerView: View {
     }
 
     private func subscriptionRow(_ sub: SubscriptionDetectionService.DetectedSubscription) -> some View {
-        HStack(spacing: 14) {
-            // Icon with period badge
+        HStack(alignment: .top, spacing: 14) {
             ZStack(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(sub.isActive ? viewModel.theme.primaryColor.opacity(0.15) : Color.gray.opacity(0.1))
-                    .frame(width: 46, height: 46)
-                Image(systemName: sub.isActive ? "checkmark.seal.fill" : "xmark.seal.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(sub.isActive ? viewModel.theme.primaryColor : .gray)
-                // Period badge
+                PennyLetIconTile(
+                    symbol: sub.isActive ? "checkmark.seal.fill" : "xmark.seal.fill",
+                    tint: sub.isActive ? Color(.systemTeal) : .gray,
+                    size: 46,
+                    shape: sub.isActive ? .circle : .roundedSquare,
+                    isProminent: sub.isActive
+                )
                 Text(sub.period.prefix(1).uppercased())
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.white)
@@ -334,34 +346,37 @@ struct SubscriptionTrackerView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(sub.displayName)
                     .font(.subheadline.weight(.semibold))
-                HStack(spacing: 4) {
-                    Text(formatPrice(sub.price, sub.currencyCode))
-                        .font(.caption.weight(.medium))
-                    Text("· \(periodLabel(sub.period))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                subscriptionMeta(
+                    price: formatPrice(sub.price, sub.currencyCode),
+                    interval: periodLabel(sub.period)
+                )
                 if let renewal = sub.renewalDate, sub.isActive {
                     HStack(spacing: 4) {
                         Image(systemName: "clock")
                             .font(.system(size: 8))
                         Text("\(viewModel.loc("Renews")) \(renewal.formatted(.relative(presentation: .named).locale(viewModel.appLocale)))")
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 }
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(monthlyEquivalent(sub))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.headline.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .currencyAmountDisplay(minScale: 0.54)
                 Text("/\(viewModel.loc("mo"))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .frame(minWidth: 54, alignment: .trailing)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -370,32 +385,26 @@ struct SubscriptionTrackerView: View {
 
     private func formatPrice(_ price: Decimal, _ code: String) -> String {
         let value = NSDecimalNumber(decimal: price).doubleValue
-        let symbol = currencySymbol(code)
-        // JPY and KRW don't use decimal places
-        if code.uppercased() == "JPY" || code.uppercased() == "KRW" {
-            return "\(symbol)\(Int(value))"
-        }
-        return String(format: "\(symbol)%.2f", value)
+        return CurrencyFormat.format(value, currency: code)
     }
 
     private func monthlyEquivalent(_ sub: SubscriptionDetectionService.DetectedSubscription) -> String {
         let monthly = monthlyValue(for: sub)
-        let symbol = currencySymbol(sub.currencyCode)
-        return String(format: "\(symbol)%.2f", monthly)
+        return CurrencyFormat.format(monthly, currency: sub.currencyCode)
     }
 
     private func monthlyValue(for sub: SubscriptionDetectionService.DetectedSubscription) -> Double {
         let value = NSDecimalNumber(decimal: sub.price).doubleValue
         switch sub.period {
         case "yearly": return value / 12
-        case "weekly": return value * 4.33
-        case "biweekly": return value * 2.165
-        case "daily": return value * 30
+        case "weekly": return value * weeksPerMonth
+        case "biweekly": return value * (weeksPerMonth / 2.0)
+        case "daily": return value * averageDaysPerMonth
         default:
             if let parsed = parseDynamicPeriod(sub.period) {
                 switch parsed.unit {
-                case "day", "days": return value * (30 / Double(max(1, parsed.count)))
-                case "week", "weeks": return value * (4.33 / Double(max(1, parsed.count)))
+                case "day", "days": return value * (averageDaysPerMonth / Double(max(1, parsed.count)))
+                case "week", "weeks": return value * (weeksPerMonth / Double(max(1, parsed.count)))
                 case "month", "months": return value / Double(max(1, parsed.count))
                 case "year", "years": return value / (12 * Double(max(1, parsed.count)))
                 default: break
@@ -406,28 +415,26 @@ struct SubscriptionTrackerView: View {
     }
 
     private func manualSubscriptionRow(_ sub: RecurringSubscription) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(viewModel.theme.primaryColor.opacity(0.14))
-                    .frame(width: 48, height: 48)
-                Image(systemName: "repeat")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(viewModel.theme.primaryColor)
-            }
+        HStack(alignment: .top, spacing: 14) {
+            PennyLetIconTile(symbol: "repeat", tint: Color(.systemTeal), size: 48, shape: .capsule, isProminent: true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(sub.name)
                     .font(.subheadline.weight(.semibold))
-                Text("\(formatPrice(Decimal(sub.amount), sub.currencyCode)) · \(intervalLabel(sub))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                subscriptionMeta(
+                    price: formatPrice(Decimal(sub.amount), sub.currencyCode),
+                    interval: intervalLabel(sub)
+                )
                 Text("\(viewModel.loc("Next charge")) \(formattedDate(sub.nextBillingDate))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             Button(role: .destructive) {
                 viewModel.deleteRecurringSubscription(sub)
@@ -444,62 +451,94 @@ struct SubscriptionTrackerView: View {
     }
 
     private func inferredSubscriptionRow(_ sub: SubscriptionDetectionService.InferredSubscription) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.orange.opacity(0.14))
-                    .frame(width: 48, height: 48)
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.orange)
-            }
+        let isAdding = addingInferredSubscriptionIDs.contains(sub.id)
+        let isAdded = addedInferredSubscriptionIDs.contains(sub.id)
+
+        return HStack(alignment: .top, spacing: 14) {
+            PennyLetIconTile(symbol: "sparkle.magnifyingglass", tint: Color(.systemOrange), size: 48, shape: .diamond, isProminent: true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(sub.name)
                     .font(.subheadline.weight(.semibold))
-                Text("\(formatPrice(Decimal(sub.amount), sub.currencyCode)) · \(intervalLabel(sub.interval, customIntervalDays: sub.customIntervalDays))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                subscriptionMeta(
+                    price: formatPrice(Decimal(sub.amount), sub.currencyCode),
+                    interval: intervalLabel(sub.interval, customIntervalDays: sub.customIntervalDays)
+                )
                 Text("\(sub.matchedTransactions) \(viewModel.loc("matches")) · \(viewModel.loc("Next charge")) \(sub.nextBillingDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(viewModel.appLocale)))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             Button {
                 addInferredSubscription(sub)
             } label: {
-                Text(viewModel.loc("Add"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(viewModel.theme.primaryColor, in: Capsule())
+                suggestedAddButton(isAdded: isAdded)
             }
             .buttonStyle(.plain)
+            .disabled(isAdding || isAdded)
+            .accessibilityLabel(isAdded ? viewModel.loc("Added") : viewModel.loc("Add Subscription"))
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(alignment: .topTrailing) {
-            Text(viewModel.loc("Suggested from transaction history"))
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.orange.opacity(0.12), in: Capsule())
-                .offset(x: -10, y: 10)
+    }
+
+    private func suggestedAddButton(isAdded: Bool) -> some View {
+        ZStack {
+            Image(systemName: "plus")
+                .scaleEffect(isAdded ? 0.25 : 1)
+                .rotationEffect(.degrees(isAdded ? -90 : 0))
+                .opacity(isAdded ? 0 : 1)
+
+            Image(systemName: "checkmark")
+                .scaleEffect(isAdded ? 1 : 0.35)
+                .rotationEffect(.degrees(isAdded ? 0 : 90))
+                .opacity(isAdded ? 1 : 0)
+        }
+        .font(.system(size: 18, weight: .bold, design: .rounded))
+        .foregroundStyle(.white)
+        .frame(width: 44, height: 44)
+        .background {
+            Circle()
+                .fill(viewModel.theme.primaryColor)
+        }
+        .overlay {
+            Circle()
+                .stroke(.white.opacity(isAdded ? 0.48 : 0.24), lineWidth: 1)
+        }
+        .shadow(color: viewModel.theme.primaryColor.opacity(isAdded ? 0.34 : 0.22), radius: isAdded ? 14 : 10, y: 5)
+        .scaleEffect(isAdded ? 1.06 : 1)
+        .animation(.spring(response: 0.32, dampingFraction: 0.72), value: isAdded)
+    }
+
+    private func subscriptionMeta(price: String, interval: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(price)
+                .font(.callout.weight(.bold).monospacedDigit())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(interval)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func monthlyValue(for sub: RecurringSubscription) -> Double {
         switch sub.interval {
-        case .weekly: return sub.amount * 4.33
-        case .biweekly: return sub.amount * 2.165
+        case .weekly: return sub.amount * weeksPerMonth
+        case .biweekly: return sub.amount * (weeksPerMonth / 2.0)
         case .monthly: return sub.amount
         case .custom:
             let days = max(1, sub.customIntervalDays ?? 30)
-            return sub.amount * (30.0 / Double(days))
+            return sub.amount * (averageDaysPerMonth / Double(days))
         }
     }
 
@@ -526,6 +565,15 @@ struct SubscriptionTrackerView: View {
     }
 
     private func addInferredSubscription(_ sub: SubscriptionDetectionService.InferredSubscription) {
+        guard !addingInferredSubscriptionIDs.contains(sub.id),
+              !addedInferredSubscriptionIDs.contains(sub.id) else { return }
+
+        Haptics.selection()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+            addingInferredSubscriptionIDs.insert(sub.id)
+            addedInferredSubscriptionIDs.insert(sub.id)
+        }
+
         Task {
             await viewModel.addRecurringSubscription(
                 name: sub.name,
@@ -537,8 +585,12 @@ struct SubscriptionTrackerView: View {
                 interval: sub.interval,
                 customIntervalDays: sub.customIntervalDays
             )
+            Haptics.success()
+            try? await Task.sleep(nanoseconds: 650_000_000)
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 inferredSubs.removeAll { $0.id == sub.id }
+                addingInferredSubscriptionIDs.remove(sub.id)
+                addedInferredSubscriptionIDs.remove(sub.id)
             }
         }
     }
@@ -575,9 +627,7 @@ struct SubscriptionTrackerView: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            Image(systemName: "creditcard.trianglebadge.exclamationmark")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
+            PennyLetIconTile(symbol: "creditcard.trianglebadge.exclamationmark", tint: Color(.systemTeal), size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(viewModel.loc("No App Store subscriptions found"))
                 .font(.headline)
             Text(viewModel.loc("Active subscriptions purchased through Apple will appear here automatically."))
@@ -603,9 +653,7 @@ struct SubscriptionTrackerView: View {
 
     private var scanPrompt: some View {
         VStack(spacing: 16) {
-            Image(systemName: "magnifyingglass.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(viewModel.theme.primaryColor)
+            PennyLetIconTile(symbol: "magnifyingglass.circle.fill", tint: Color(.systemBlue), size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(viewModel.loc("Scan for Subscriptions"))
                 .font(.title3.weight(.semibold))
             Text(viewModel.loc("PennyLet can detect your active App Store subscriptions and track them automatically."))
@@ -639,13 +687,15 @@ private struct AddSubscriptionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var amount = ""
-    @State private var selectedCurrency = "native"
+    @State private var selectedCurrency = ""
     @State private var startDate = Date()
     @State private var billingInterval: RecurringSubscription.BillingInterval = .monthly
     @State private var customIntervalDays = 30
     @State private var note = ""
     @State private var isSaving = false
     @FocusState private var focusedField: Field?
+    private let averageDaysPerMonth = 365.2425 / 12.0
+    private let weeksPerMonth = (365.2425 / 12.0) / 7.0
 
     private enum Field {
         case name
@@ -662,14 +712,22 @@ private struct AddSubscriptionSheet: View {
     }
 
     private var parsedAmount: Double? {
-        let cleaned = amount
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ",", with: ".")
-        return Double(cleaned)
+        CurrencyFormat.parseInput(amount)
     }
 
     private var currencyCode: String {
-        selectedCurrency == "native" ? viewModel.currency : selectedCurrency
+        selectedCurrency.isEmpty ? viewModel.currency : selectedCurrency
+    }
+
+    private var currencyOptions: [(code: String, name: String, symbol: String)] {
+        var options = CurrencyRateService.supportedCurrencies
+        if !options.contains(where: { $0.code == viewModel.currency }) {
+            options.insert(
+                (viewModel.currency, viewModel.currency, CurrencyFormat.currencySymbol(for: viewModel.currency)),
+                at: 0
+            )
+        }
+        return options
     }
 
     private var canSave: Bool {
@@ -680,10 +738,10 @@ private struct AddSubscriptionSheet: View {
     private var monthlyPreview: Double {
         let value = parsedAmount ?? 0
         switch billingInterval {
-        case .weekly: return value * 4.33
-        case .biweekly: return value * 2.165
+        case .weekly: return value * weeksPerMonth
+        case .biweekly: return value * (weeksPerMonth / 2.0)
         case .monthly: return value
-        case .custom: return value * (30.0 / Double(max(1, customIntervalDays)))
+        case .custom: return value * (averageDaysPerMonth / Double(max(1, customIntervalDays)))
         }
     }
 
@@ -711,18 +769,7 @@ private struct AddSubscriptionSheet: View {
                 .padding(.bottom, 110)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(
-                LinearGradient(
-                    colors: [
-                        viewModel.theme.primaryColor.opacity(0.12),
-                        viewModel.theme.accentColor.opacity(0.07),
-                        Color(.systemBackground)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-            )
+            .clearSpendScreenBackground(theme: viewModel.theme)
             .navigationTitle(viewModel.loc("New Subscription"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -736,58 +783,43 @@ private struct AddSubscriptionSheet: View {
                 saveFooter
             }
         }
+        .onAppear {
+            if selectedCurrency.isEmpty {
+                selectedCurrency = viewModel.currency
+            }
+        }
     }
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
-                Image(systemName: "repeat.circle.fill")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(.white)
+                PennyLetIconTile(symbol: "repeat.circle.fill", tint: Color(.systemTeal), size: 46, symbolScale: 0.48, shape: .capsule, isProminent: true)
 
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(CurrencyFormat.format(monthlyPreview, currency: currencyCode))
                         .font(.title2.weight(.bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
+                        .currencyAmountDisplay(minScale: 0.54)
                     Text("/\(viewModel.loc("mo"))")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.68))
+                        .foregroundStyle(.secondary)
                 }
+                .layoutPriority(1)
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(viewModel.loc("Subscription only"))
+                Text(viewModel.loc("Subscription Tracker"))
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.72))
-                Text(viewModel.loc("Add a recurring bill without creating a transaction."))
+                    .foregroundStyle(viewModel.theme.primaryColor)
+                Text(viewModel.loc("Track recurring charges and renewal dates."))
                     .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .foregroundStyle(.white)
         .padding(20)
-        .background(
-            LinearGradient(
-                colors: [
-                    viewModel.theme.primaryColor,
-                    viewModel.theme.primaryColor.opacity(0.82),
-                    viewModel.theme.accentColor.opacity(0.9)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay(alignment: .bottomTrailing) {
-            Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 88))
-                .foregroundStyle(.white.opacity(0.09))
-                .offset(x: 18, y: 22)
-        }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.22), radius: 20, y: 10)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 
     private var detailsCard: some View {
@@ -812,11 +844,13 @@ private struct AddSubscriptionSheet: View {
                     .focused($focusedField, equals: .amount)
                     .keyboardType(.decimalPad)
                     .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .layoutPriority(1)
 
                 Picker(viewModel.loc("Currency"), selection: $selectedCurrency) {
-                    Text("\(viewModel.currency) · \(viewModel.loc("App currency"))").tag("native")
-                    ForEach(CurrencyRateService.supportedCurrencies, id: \.code) { currency in
-                        Text("\(currency.code) · \(currency.name)").tag(currency.code)
+                    ForEach(currencyOptions, id: \.code) { currency in
+                        Text(currencyLabel(currency)).tag(currency.code)
                     }
                 }
                 .labelsHidden()
@@ -869,11 +903,12 @@ private struct AddSubscriptionSheet: View {
             }
 
             HStack(spacing: 10) {
-                Image(systemName: "bell.badge")
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                PennyLetIconTile(symbol: "bell.badge", tint: Color(.systemOrange), size: 30, symbolScale: 0.42, shape: .diamond)
                 Text("\(viewModel.loc("Next charge")) \(nextChargeDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(viewModel.appLocale)))")
                     .font(.subheadline.weight(.semibold))
-                Spacer()
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
             }
             .padding(13)
             .background(viewModel.theme.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
@@ -918,20 +953,13 @@ private struct AddSubscriptionSheet: View {
                     }
                     Text(viewModel.loc("Save Subscription"))
                         .font(.headline)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
                 .foregroundStyle(.white)
-                .background(
-                    LinearGradient(
-                        colors: canSave
-                            ? [viewModel.theme.primaryColor, viewModel.theme.accentColor]
-                            : [Color.gray.opacity(0.55), Color.gray.opacity(0.45)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
+                .premiumActionFill(tint: viewModel.theme.primaryColor, isEnabled: canSave)
             }
             .buttonStyle(.plain)
             .disabled(!canSave || isSaving)
@@ -944,12 +972,15 @@ private struct AddSubscriptionSheet: View {
 
     private func sectionTitle(_ title: String, icon: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundStyle(viewModel.theme.primaryColor)
+            PennyLetIconTile(symbol: icon, tint: Color(.systemTeal), size: 28, symbolScale: 0.4, shape: .circle)
             Text(title)
                 .font(.subheadline.weight(.bold))
             Spacer()
         }
+    }
+
+    private func currencyLabel(_ currency: (code: String, name: String, symbol: String)) -> String {
+        "\(currency.code) · \(currency.symbol) \(currency.name)"
     }
 
     private func intervalButton(
@@ -968,12 +999,17 @@ private struct AddSubscriptionSheet: View {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     Spacer()
                 }
-                Text(title)
-                    .font(.subheadline.weight(.bold))
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(isSelected ? .white.opacity(0.72) : .secondary)
-            }
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .white.opacity(0.72) : .secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+                .fixedSize(horizontal: false, vertical: true)
+        }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .foregroundStyle(isSelected ? .white : .primary)

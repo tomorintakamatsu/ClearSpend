@@ -6,6 +6,36 @@ enum AnimationPresets {
     static let snappy = Animation.spring(response: 0.25, dampingFraction: 0.65)
     static let bouncy = Animation.spring(response: 0.5, dampingFraction: 0.6, blendDuration: 0.1)
     static let gentle = Animation.easeInOut(duration: 0.35)
+    static let fold = Animation.spring(response: 0.44, dampingFraction: 0.9, blendDuration: 0.06)
+    static let pullDown = Animation.easeInOut(duration: 0.26)
+}
+
+extension AnyTransition {
+    static var foldReveal: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .move(edge: .top))
+                .combined(with: .scale(scale: 0.985, anchor: .top)),
+            removal: .opacity
+                .combined(with: .scale(scale: 0.985, anchor: .top))
+        )
+    }
+
+    static var pullDownReveal: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .top)),
+            removal: .opacity.combined(with: .move(edge: .top))
+        )
+    }
+
+    static var underHeaderReveal: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.985, anchor: .top)),
+            removal: .opacity
+                .combined(with: .scale(scale: 0.985, anchor: .top))
+        )
+    }
 }
 
 // MARK: - Button press modifier
@@ -53,14 +83,24 @@ struct StaggeredEntrance: ViewModifier {
 // MARK: - Card entrance modifier
 
 struct CardEntrance: ViewModifier {
+    let delay: Double
     @State private var isVisible = false
+
+    init(delay: Double = 0) {
+        self.delay = delay
+    }
 
     func body(content: Content) -> some View {
         content
             .opacity(isVisible ? 1 : 0)
-            .scaleEffect(isVisible ? 1 : 0.94)
-            .blur(radius: isVisible ? 0 : 4)
-            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: isVisible)
+            .scaleEffect(isVisible ? 1 : 0.965)
+            .offset(y: isVisible ? 0 : 18)
+            .blur(radius: isVisible ? 0 : 5)
+            .animation(
+                .spring(response: 0.58, dampingFraction: 0.84)
+                    .delay(delay),
+                value: isVisible
+            )
             .onAppear { isVisible = true }
     }
 }
@@ -93,7 +133,11 @@ extension View {
     }
 
     func cardEntrance() -> some View {
-        modifier(CardEntrance())
+        modifier(CardEntrance(delay: 0))
+    }
+
+    func cardEntrance(index: Int) -> some View {
+        modifier(CardEntrance(delay: min(Double(index) * 0.055, 0.24)))
     }
 
     func edgePush(from edge: Edge) -> some View {

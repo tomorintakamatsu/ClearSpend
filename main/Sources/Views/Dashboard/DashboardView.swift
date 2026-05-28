@@ -2,28 +2,38 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AppViewModel.self) private var viewModel
-    @Binding var showAddSheet: Bool
     @State private var showHelp = false
+
+    private var hasTransactions: Bool {
+        !viewModel.transactions.isEmpty
+    }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                headerSection
+            VStack(spacing: 18) {
+                if viewModel.isBlockVisible(.homeSafeToSpend) {
+                    SpendHeroCard(summary: viewModel.spendSummary, currency: viewModel.currency, theme: viewModel.theme)
+                        .cardEntrance(index: 0)
+                }
 
-                SpendHeroCard(summary: viewModel.spendSummary, currency: viewModel.currency, theme: viewModel.theme)
-                    .cardEntrance()
-                QuickStatsRow(summary: viewModel.spendSummary, currency: viewModel.currency)
-                    .cardEntrance()
-                TopCategoriesList(breakdown: viewModel.categoryBreakdown, currency: viewModel.currency)
-                    .cardEntrance()
-                RecentActivityList(transactions: viewModel.recentTransactions, currency: viewModel.currency)
-                    .cardEntrance()
+                if hasTransactions {
+                    if viewModel.isBlockVisible(.homeMonthlyPulse) {
+                        QuickStatsRow(summary: viewModel.spendSummary, currency: viewModel.currency)
+                            .cardEntrance(index: 1)
+                    }
 
-                if viewModel.transactions.isEmpty && !viewModel.isLoadingData {
-                    Text(viewModel.loc("No transactions yet"))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
+                    if viewModel.isBlockVisible(.homeTopCategories), !viewModel.categoryBreakdown.isEmpty {
+                        TopCategoriesList(breakdown: viewModel.categoryBreakdown, currency: viewModel.currency)
+                            .cardEntrance(index: 2)
+                    }
+
+                    if viewModel.isBlockVisible(.homeRecentActivity) {
+                        RecentActivityList(transactions: viewModel.recentTransactions, currency: viewModel.currency)
+                            .cardEntrance(index: 3)
+                    }
+                } else if !viewModel.isLoadingData {
+                    QuietDashboardStartCard()
+                        .cardEntrance(index: 1)
                 }
             }
             .padding(.horizontal, 20)
@@ -31,8 +41,19 @@ struct DashboardView: View {
             .padding(.bottom, 100)
         }
         .clearSpendScreenBackground(theme: viewModel.theme)
-        .navigationTitle(viewModel.loc("PennyLet"))
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showHelp = true
+                } label: {
+                    Image(systemName: "questionmark.circle.fill")
+                        .foregroundStyle(viewModel.theme.primaryColor)
+                }
+                .accessibilityLabel(viewModel.loc("Help"))
+            }
+        }
         .refreshable {
             await viewModel.refreshAll()
         }
@@ -41,42 +62,6 @@ struct DashboardView: View {
                 ProgressView()
             }
         }
-    }
-
-    private var locale: Locale {
-        switch viewModel.language {
-        case "ja": return Locale(identifier: "ja_JP")
-        case "zh": return Locale(identifier: "zh_Hans")
-        default: return Locale(identifier: "en_US")
-        }
-    }
-
-    private var headerSection: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.loc("PennyLet"))
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.primary)
-                Text(Date.now.formatted(Date.FormatStyle.dateTime.weekday(.wide).month(.wide).day().locale(locale)))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button {
-                showHelp = true
-            } label: {
-                Image(systemName: "questionmark.circle.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(viewModel.theme.primaryColor)
-                    .frame(width: 42, height: 42)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(viewModel.theme.primaryColor.opacity(0.12), lineWidth: 1)
-                    }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(isPresented: $showHelp) {
             NavigationStack {
                 helpView
@@ -140,5 +125,23 @@ struct DashboardView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct QuietDashboardStartCard: View {
+    @Environment(AppViewModel.self) private var viewModel
+
+    var body: some View {
+        HStack(spacing: 14) {
+            PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 42, shape: .circle, isProminent: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.loc("No transactions yet"))
+                    .font(.title3.weight(.bold))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 }

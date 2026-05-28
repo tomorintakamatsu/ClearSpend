@@ -40,6 +40,7 @@
 		88B8B6014F706146C35E2F26 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D6CC56C17E456EB528C0156 /* Constants.swift */; };
 		985492B605DDA4562701D726 /* Date+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B17C10DDEAFF4C7D478588 /* Date+Extensions.swift */; };
 		9F4A52656013C15CE29A1A9B /* SkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9343875663B6B3879678CAC /* SkeletonView.swift */; };
+		A04E5F5D9374F2C58C1C2A90 /* PennyLetIconTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04E5F5C9374F2C58C1C2A90 /* PennyLetIconTile.swift */; };
 		A71696338B9FF6E29ADE3C92 /* Budget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506CF0520D51B1C6443369A1 /* Budget.swift */; };
 		A8D6014740AB91C4F7B2F946 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CBF36A2ED45843AACDE1B7 /* Haptics.swift */; };
 		ADAB5228C70460ED567D0A2D /* Category.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B1B65BD5B57DC75FB0F57F /* Category.swift */; };
@@ -59,7 +60,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0BE37FE6DE564A93B49BB7CC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0BE37FE6DE564A93B49BB7CC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0F4ABCE24A64F31508E603CC /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		1513EDD2E219EC0CFF3090CF /* AddTransactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionView.swift; sourceTree = "<group>"; };
 		157CF9A876CED7869A250C64 /* RecentActivityList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentActivityList.swift; sourceTree = "<group>"; };
@@ -71,7 +72,7 @@
 		343A2593F725A6B2C3DA68B3 /* AIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIClient.swift; sourceTree = "<group>"; };
 		36B17C10DDEAFF4C7D478588 /* Date+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Date+Extensions.swift"; sourceTree = "<group>"; };
 		3FC45DAEAC776A3EB046B6F1 /* AnalysisHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisHistory.swift; sourceTree = "<group>"; };
-		463311C92C14E96FE7B07019 /* PennyLet.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PennyLet.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		463311C92C14E96FE7B07019 /* PennyLet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PennyLet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		47BE5B440BB5AE5F7A15CE1F /* SpendSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpendSummary.swift; sourceTree = "<group>"; };
 		4942D9189871980F7AB948DE /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		506CF0520D51B1C6443369A1 /* Budget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Budget.swift; sourceTree = "<group>"; };
@@ -89,6 +90,7 @@
 		8D95BD9D7E59297EAF23A8C1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		9010EF59883A4637F01AC229 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		905FFB16D0C806A9E13500B0 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		A04E5F5C9374F2C58C1C2A90 /* PennyLetIconTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PennyLetIconTile.swift; sourceTree = "<group>"; };
 		AA2C472E479FCCF33FB079F7 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
 		ACAD16469DCAED23C21B7035 /* SubscriptionDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionDetectionService.swift; sourceTree = "<group>"; };
 		ADA3E005CAC6DD73036831AF /* CacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheService.swift; sourceTree = "<group>"; };
@@ -187,6 +189,7 @@
 			isa = PBXGroup;
 			children = (
 				804707EA7E98EAD37751362E /* GuestUpgradeModal.swift */,
+				A04E5F5C9374F2C58C1C2A90 /* PennyLetIconTile.swift */,
 				F9343875663B6B3879678CAC /* SkeletonView.swift */,
 			);
 			path = Shared;
@@ -443,6 +446,7 @@
 				A8D6014740AB91C4F7B2F946 /* Haptics.swift in Sources */,
 				6216FEB41B8561018EC66B8E /* LocalizationStrings.swift in Sources */,
 				85A2928F87124974C2E5DA26 /* NotificationService.swift in Sources */,
+				A04E5F5D9374F2C58C1C2A90 /* PennyLetIconTile.swift in Sources */,
 				F1AAA47357757EEF80995A1D /* PennyLetApp.swift in Sources */,
 				E344DF01A9368CE36A6281E9 /* ProStatusService.swift in Sources */,
 				773048A9C0F5DA3D0B02F625 /* QuickStatsRow.swift in Sources */,
@@ -570,6 +574,7 @@
 				DEVELOPMENT_TEAM = 776XFU3GK7;
 				INFOPLIST_KEY_CFBundleDisplayName = PennyLet;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -658,6 +663,7 @@
 				DEVELOPMENT_TEAM = 776XFU3GK7;
 				INFOPLIST_KEY_CFBundleDisplayName = PennyLet;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

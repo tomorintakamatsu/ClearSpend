@@ -36,78 +36,110 @@ struct TransactionListView: View {
         filtered.reduce(0) { $0 + $1.signedAmount }
     }
 
-    var body: some View {
-        List {
-            Section {
-                ActivitySummaryCard(
-                    count: filtered.count,
-                    total: filteredTotal,
-                    currency: viewModel.currency,
-                    filterName: viewModel.loc(filter.rawValue.capitalized)
-                )
-                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
+    private var filteredIncomeTotal: Double {
+        filtered.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+    }
 
-            ForEach(Array(groupedByDate.enumerated()), id: \.element.0) { sectionIndex, group in
-                let (date, items) = group
-                Section {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { itemIndex, tx in
-                        TransactionRow(transaction: tx, currency: viewModel.currency)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 4, trailing: 20))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .staggeredEntrance(index: itemIndex)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    Task { await viewModel.deleteTransaction(tx) }
-                                } label: {
-                                    Label(viewModel.loc("Delete"), systemImage: "trash")
-                                }
-                            }
-                    }
-                } header: {
-                    HStack {
-                        Text(formattedDate(date))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        let total = items.reduce(0) { $0 + $1.signedAmount }
-                        Text(CurrencyFormat.formatSigned(total, currency: viewModel.currency))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 4)
-                    .padding(.top, 8)
-                }
+    private var filteredExpenseTotal: Double {
+        filtered.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+    }
+
+    var body: some View {
+        transactionList
+            .clearSpendScreenBackground(theme: viewModel.theme)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: filter)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: searchText)
+            .searchable(text: $searchText, prompt: viewModel.loc("Search transactions"))
+            .navigationTitle(viewModel.loc("Activity"))
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var transactionList: some View {
+        List {
+            if viewModel.isBlockVisible(.activityFilter) {
+                filterSection
             }
+            if viewModel.isBlockVisible(.activitySummary) {
+                summarySection
+            }
+            transactionSections
         }
         .listStyle(.plain)
-        .clearSpendScreenBackground(theme: viewModel.theme)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: filter)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: searchText)
-        .searchable(text: $searchText, prompt: viewModel.loc("Search transactions"))
-        .navigationTitle(viewModel.loc("Activity"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Picker(viewModel.loc("Filter"), selection: $filter) {
-                    ForEach(FilterType.allCases, id: \.self) { f in
-                        Text(viewModel.loc(f.rawValue.capitalized)).tag(f)
-                    }
+        .scrollContentBackground(.hidden)
+    }
+
+    private var filterSection: some View {
+        Section {
+            Picker(viewModel.loc("Filter"), selection: $filter) {
+                ForEach(FilterType.allCases, id: \.self) { f in
+                    Text(viewModel.loc(f.rawValue.capitalized)).tag(f)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 200)
             }
+            .pickerStyle(.segmented)
+            .onChange(of: filter) { oldValue, newValue in
+                if oldValue != newValue {
+                    Haptics.selection()
+                }
+            }
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityLabel(viewModel.loc("Filter"))
+            .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 8, trailing: 20))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
-        .overlay {
-            if filtered.isEmpty && !viewModel.isLoadingData {
-                ContentUnavailableView(
-                    searchText.isEmpty ? viewModel.loc("No Transactions") : viewModel.loc("No Results"),
-                    systemImage: searchText.isEmpty ? "tray" : "magnifyingglass",
-                    description: Text(searchText.isEmpty ? viewModel.loc("Add your first transaction") : viewModel.loc("Try a different search"))
-                )
+    }
+
+    private var summarySection: some View {
+        Section {
+            ActivitySummaryCard(
+                count: filtered.count,
+                total: filteredTotal,
+                incomeTotal: filteredIncomeTotal,
+                expenseTotal: filteredExpenseTotal,
+                currency: viewModel.currency,
+                filterName: viewModel.loc(filter.rawValue.capitalized),
+                filter: filter,
+                showsSplitTotals: filter == .all
+            )
+            .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    private var transactionSections: some View {
+        ForEach(Array(groupedByDate.enumerated()), id: \.element.0) { _, group in
+            let (date, items) = group
+            Section {
+                ForEach(Array(items.enumerated()), id: \.element.id) { itemIndex, tx in
+                    TransactionRow(transaction: tx, currency: viewModel.currency)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 4, trailing: 20))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .staggeredEntrance(index: itemIndex)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                Task { await viewModel.deleteTransaction(tx) }
+                            } label: {
+                                Label(viewModel.loc("Delete"), systemImage: "trash")
+                            }
+                        }
+                }
+            } header: {
+                HStack {
+                    Text(formattedDate(date))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    let total = items.reduce(0) { $0 + $1.signedAmount }
+                    Text(CurrencyFormat.formatSigned(total, currency: viewModel.currency))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .currencyAmountDisplay(minScale: 0.6)
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 8)
             }
         }
     }
@@ -132,47 +164,97 @@ private struct ActivitySummaryCard: View {
     @Environment(AppViewModel.self) private var viewModel
     let count: Int
     let total: Double
+    let incomeTotal: Double
+    let expenseTotal: Double
     let currency: String
     let filterName: String
+    let filter: TransactionListView.FilterType
+    let showsSplitTotals: Bool
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            summaryHeader
+            summaryDetails
+        }
+        .padding(20)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
+    }
+
+    private var transactionCountText: String {
+        switch viewModel.language {
+        case "ja":
+            return "\(count)件の取引"
+        case "zh":
+            return "\(count)笔交易"
+        default:
+            return "\(count) \(count == 1 ? "transaction" : "transactions")"
+        }
+    }
+
+    private var summaryHeader: some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: "list.bullet.rectangle.portrait.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+            PennyLetIconTile(symbol: "list.bullet.rectangle.portrait.fill", tint: Color(.systemBlue), size: 44, shape: .capsule, isProminent: true)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(filterName)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.68))
-                Text("\(count) \(viewModel.loc(count == 1 ? "transaction" : "transactions"))")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(transactionCountText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 10)
+        }
+    }
 
-            Text(CurrencyFormat.formatSigned(total, currency: currency))
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
+    private var summaryDetails: some View {
+        VStack(spacing: 8) {
+            if showsSplitTotals {
+                summaryAmountRow(viewModel.loc("Income"), amount: incomeTotal, color: .green, icon: "arrow.down.left.circle.fill")
+                summaryAmountRow(viewModel.loc("Expense"), amount: expenseTotal, color: .red, icon: "arrow.up.right.circle.fill")
+            } else {
+                summaryAmountRow(
+                    filterName,
+                    amount: abs(total),
+                    color: filter == .income ? .green : .red,
+                    icon: filter == .income ? "arrow.down.left.circle.fill" : "arrow.up.right.circle.fill"
+                )
+            }
+        }
+    }
+
+    private func summaryAmountRow(_ title: String, amount: Double, color: Color, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(color)
+                .frame(width: 24, height: 24)
+                .background(color.opacity(0.10), in: Circle())
+
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.75)
+
+            Spacer(minLength: 12)
+
+            Text(CurrencyFormat.format(amount, currency: currency))
+                .font(.title3.monospacedDigit().weight(.bold))
+                .foregroundStyle(color)
+                .currencyAmountDisplay(minScale: 0.56)
         }
-        .padding(18)
-        .background(
-            LinearGradient(
-                colors: viewModel.theme.gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
-        }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.20), radius: 18, y: 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

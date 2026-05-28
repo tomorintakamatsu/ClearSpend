@@ -50,7 +50,11 @@ struct AddTransactionView: View {
     }
 
     private var isValid: Bool {
-        (Double(amount) ?? 0) > 0
+        (parsedAmount ?? 0) > 0
+    }
+
+    private var parsedAmount: Double? {
+        CurrencyFormat.parseInput(amount)
     }
 
     var body: some View {
@@ -65,7 +69,7 @@ struct AddTransactionView: View {
                     categoryGrid
                     if isSubscription {
                         subscriptionDetails
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(.foldReveal)
                     }
                     noteAndDate
                     Spacer(minLength: 20)
@@ -239,7 +243,7 @@ struct AddTransactionView: View {
 
     @ViewBuilder
     private var conversionPreview: some View {
-        if let converted = convertedAmount, let rate = conversionRate, selectedCurrency != "native", let value = Double(amount) {
+        if let converted = convertedAmount, let rate = conversionRate, selectedCurrency != "native", let value = parsedAmount {
             VStack(spacing: 4) {
                 if isConverting {
                     HStack(spacing: 6) {
@@ -257,10 +261,16 @@ struct AddTransactionView: View {
                         Text("\(CurrencyFormat.formatForeign(value, currency: selectedCurrency)) = \(CurrencyFormat.format(converted, currency: viewModel.currency))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Text("\(viewModel.loc("Rate")): 1 \(selectedCurrency) = \(String(format: "%.4f", rate)) \(viewModel.currency)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, 12)
@@ -302,7 +312,10 @@ struct AddTransactionView: View {
                             Text(viewModel.loc(cat.label))
                                 .font(.system(size: 9, design: .rounded))
                                 .foregroundStyle(category == cat.id ? .primary : .secondary)
-                                .lineLimit(1)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.72)
+                                .multilineTextAlignment(.center)
+                                .frame(minHeight: 22, alignment: .top)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -314,15 +327,20 @@ struct AddTransactionView: View {
                         showCustomCategoryField.toggle()
                     } label: {
                         VStack(spacing: 6) {
-                            Image(systemName: showCustomCategoryField ? "xmark" : "plus")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.teal)
-                                .frame(width: 40, height: 40)
-                                .background(.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                            PennyLetIconTile(
+                                symbol: showCustomCategoryField ? "xmark" : "plus",
+                                tint: .teal,
+                                size: 40,
+                                symbolScale: 0.38,
+                                shape: .circle
+                            )
                             Text(viewModel.loc(showCustomCategoryField ? "Cancel" : "New"))
                                 .font(.system(size: 9, design: .rounded))
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.72)
+                                .multilineTextAlignment(.center)
+                                .frame(minHeight: 22, alignment: .top)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -385,25 +403,52 @@ struct AddTransactionView: View {
     private var subscriptionDetails: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Image(systemName: "repeat.circle.fill")
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                PennyLetIconTile(symbol: "repeat.circle.fill", tint: Color(.systemTeal), size: 32, symbolScale: 0.42, shape: .capsule)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(viewModel.loc("Track as subscription"))
                         .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
                     Text(viewModel.loc("Future charges will be added automatically."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .layoutPriority(1)
                 Spacer()
             }
 
-            Picker(viewModel.loc("Billing period"), selection: $billingInterval) {
-                Text(viewModel.loc("Weekly")).tag(RecurringSubscription.BillingInterval.weekly)
-                Text(viewModel.loc("Every 2 weeks")).tag(RecurringSubscription.BillingInterval.biweekly)
-                Text(viewModel.loc("Monthly")).tag(RecurringSubscription.BillingInterval.monthly)
-                Text(viewModel.loc("Custom")).tag(RecurringSubscription.BillingInterval.custom)
+            Menu {
+                ForEach(RecurringSubscription.BillingInterval.allCases, id: \.self) { interval in
+                    Button(billingIntervalTitle(interval)) {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            billingInterval = interval
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.loc("Billing period"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(billingIntervalTitle(billingInterval))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.78)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
-            .pickerStyle(.segmented)
+            .buttonStyle(.plain)
 
             if billingInterval == .custom {
                 Stepper(
@@ -412,16 +457,21 @@ struct AddTransactionView: View {
                     in: 1...365
                 )
                 .font(.subheadline)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.foldReveal)
             }
 
-            HStack {
+            HStack(alignment: .top, spacing: 10) {
                 Text(viewModel.loc("Next charge"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 8)
                 Text(nextChargeDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(viewModel.appLocale)))
                     .font(.caption.weight(.semibold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.trailing)
             }
         }
         .padding(16)
@@ -446,6 +496,19 @@ struct AddTransactionView: View {
         }
     }
 
+    private func billingIntervalTitle(_ interval: RecurringSubscription.BillingInterval) -> String {
+        switch interval {
+        case .weekly:
+            return viewModel.loc("Weekly")
+        case .biweekly:
+            return viewModel.loc("Every 2 weeks")
+        case .monthly:
+            return viewModel.loc("Monthly")
+        case .custom:
+            return viewModel.loc("Custom")
+        }
+    }
+
     private var saveButton: some View {
         Button {
             save()
@@ -461,22 +524,13 @@ struct AddTransactionView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(
-                isValid
-                    ? LinearGradient(
-                        colors: type == .income ? [Color.green, Color.green.opacity(0.7)] : [viewModel.theme.primaryColor, viewModel.theme.accentColor],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    : LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
+            .premiumActionFill(tint: type == .income ? .green : viewModel.theme.primaryColor, isEnabled: isValid)
         }
         .disabled(!isValid || isSaving)
     }
 
     private func save() {
-        guard let value = Double(amount), value > 0 else { return }
+        guard let value = parsedAmount, value > 0 else { return }
         isSaving = true
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -518,7 +572,7 @@ struct AddTransactionView: View {
     }
 
     private func performConversion() async {
-        guard let value = Double(amount), value > 0,
+        guard let value = parsedAmount, value > 0,
               selectedCurrency != "native" else {
             convertedAmount = nil
             conversionRate = nil

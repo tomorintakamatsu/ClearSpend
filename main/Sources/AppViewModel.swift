@@ -1,12 +1,33 @@
 import SwiftUI
 import Observation
 
+enum AppDisplayBlock: String, CaseIterable, Hashable {
+    case homeSafeToSpend
+    case homeMonthlyPulse
+    case homeTopCategories
+    case homeRecentActivity
+    case activityFilter
+    case activitySummary
+    case goalsOverview
+    case aiIntro
+    case aiUsage
+    case aiHistory
+    case moreOverview
+    case subscriptionsOverview
+    case subscriptionsSuggestions
+    case budgetOverview
+    case budgetCategories
+    case budgetIncomeChart
+    case budgetKeyNumbers
+}
+
 @MainActor
 @Observable
 final class AppViewModel {
     // MARK: - Persistent Preferences
 
     private let prefs = UserDefaults.standard
+    private let hiddenDisplayBlocksKey = "hidden_display_blocks"
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -14,6 +35,7 @@ final class AppViewModel {
         prefs.set(font.rawValue, forKey: "app_font")
         prefs.set(language, forKey: "app_language")
         prefs.set(currency, forKey: "app_currency")
+        saveDisplayBlockPreferences()
     }
 
     func loadPreferencesFromDisk() {
@@ -22,6 +44,7 @@ final class AppViewModel {
         if let f = prefs.string(forKey: "app_font"), let fn = AppFont(rawValue: f) { font = fn }
         if let l = prefs.string(forKey: "app_language") { language = l }
         if let cr = prefs.string(forKey: "app_currency") { currency = cr }
+        loadDisplayBlockPreferences()
         isDeveloperMode = prefs.bool(forKey: developerModeKey)
     }
 
@@ -104,6 +127,34 @@ final class AppViewModel {
     var currency: String = "USD"
     var language: String = "en" {
         didSet { CurrencyFormat.language = language }
+    }
+    private(set) var hiddenDisplayBlocks: Set<AppDisplayBlock> = []
+
+    func isBlockVisible(_ block: AppDisplayBlock) -> Bool {
+        !hiddenDisplayBlocks.contains(block)
+    }
+
+    func setBlock(_ block: AppDisplayBlock, visible: Bool) {
+        if visible {
+            hiddenDisplayBlocks.remove(block)
+        } else {
+            hiddenDisplayBlocks.insert(block)
+        }
+        saveDisplayBlockPreferences()
+    }
+
+    func resetVisibleBlocks() {
+        hiddenDisplayBlocks.removeAll()
+        saveDisplayBlockPreferences()
+    }
+
+    private func saveDisplayBlockPreferences() {
+        prefs.set(hiddenDisplayBlocks.map(\.rawValue).sorted(), forKey: hiddenDisplayBlocksKey)
+    }
+
+    private func loadDisplayBlockPreferences() {
+        let rawValues = prefs.stringArray(forKey: hiddenDisplayBlocksKey) ?? []
+        hiddenDisplayBlocks = Set(rawValues.compactMap(AppDisplayBlock.init(rawValue:)))
     }
 
     // Developer mode
@@ -216,6 +267,8 @@ final class AppViewModel {
         font = .inter
         currency = "USD"
         language = savedLanguage
+        hiddenDisplayBlocks.removeAll()
+        saveDisplayBlockPreferences()
         hasProSubscription = false
         saveLocalData()
         let cache = CacheService.shared
@@ -464,7 +517,8 @@ final class AppViewModel {
         return formatter.string(from: date)
     }
 
-    func generateForecast() async throws -> AIResult {
+    func generateForecast(progress: AIProgressHandler? = nil) async throws -> AIResult {
+        progress?(.collectingData)
         let s = spendSummary
         let cal = Calendar.current
         let thisMonth = transactions.filter { tx in
@@ -548,7 +602,10 @@ final class AppViewModel {
             ]),
             "required": .array([.string("summary"), .string("forecast_amount"), .string("top_forecasted_category"), .string("saving_tip"), .string("watch_item"), .string("confidence_reason"), .string("data_gap")]),
         ]
+        progress?(.requestPrepared)
+        progress?(.waitingForAI)
         let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        progress?(.responseReceived)
         let formatted = formatForecastResult(raw)
         let forecastAmount = jsonNumber(raw, key: "forecast_amount") ?? localForecastBaseline
 
@@ -562,11 +619,13 @@ final class AppViewModel {
 
         let now = ISO8601DateFormatter().string(from: Date())
         let historyData = AnalysisHistoryData(type: "forecast", content: formatted, analysisDate: now, categoryChartJSON: chartJSON(catChart), dailyChartJSON: chartJSON(trendData))
+        progress?(.savingResult)
         await saveAnalysisHistoryEntry(historyData)
 
         await incrementUsage("forecast")
         let res = AIResult(text: formatted, categoryChart: catChart, dailyChart: trendData)
         currentForecastResult = res
+        progress?(.finished)
         return res
     }
 
@@ -598,7 +657,30 @@ final class AppViewModel {
         let dailyChart: [(day: String, amount: Double)]
     }
 
-    func generateDailyAnalysis() async throws -> AIResult {
+    enum AIProgressPhase: Sendable {
+        case collectingData
+        case requestPrepared
+        case waitingForAI
+        case responseReceived
+        case savingResult
+        case finished
+
+        var messageKey: String {
+            switch self {
+            case .collectingData: return "Reading local spending data"
+            case .requestPrepared: return "Preparing AI request"
+            case .waitingForAI: return "Waiting for AI response"
+            case .responseReceived: return "AI response received"
+            case .savingResult: return "Saving result locally"
+            case .finished: return "Result ready"
+            }
+        }
+    }
+
+    typealias AIProgressHandler = @MainActor @Sendable (AIProgressPhase) -> Void
+
+    func generateDailyAnalysis(progress: AIProgressHandler? = nil) async throws -> AIResult {
+        progress?(.collectingData)
         let summary = spendSummary
         let todayTxns = transactions.filter { tx in
             guard let date = tx.dateValue else { return false }
@@ -674,20 +756,26 @@ final class AppViewModel {
             "required": .array([.string("title"), .string("summary"), .string("top_category"), .string("evidence"), .string("action"), .string("confidence"), .string("data_gap")]),
         ]
 
+        progress?(.requestPrepared)
+        progress?(.waitingForAI)
         let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        progress?(.responseReceived)
         let formatted = formatResult(raw, type: "daily")
 
         let today = ISO8601DateFormatter().string(from: Date())
         let historyData = AnalysisHistoryData(type: "daily", content: formatted, analysisDate: today, categoryChartJSON: nil, dailyChartJSON: nil)
+        progress?(.savingResult)
         await saveAnalysisHistoryEntry(historyData)
 
         await incrementUsage("daily")
         let res = AIResult(text: formatted, categoryChart: [], dailyChart: [])
         currentDailyResult = res
+        progress?(.finished)
         return res
     }
 
-    func generateWeeklyAnalysis() async throws -> AIResult {
+    func generateWeeklyAnalysis(progress: AIProgressHandler? = nil) async throws -> AIResult {
+        progress?(.collectingData)
         let summary = spendSummary
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
@@ -776,21 +864,27 @@ final class AppViewModel {
             "required": .array([.string("summary"), .string("top_category"), .string("vs_last_week"), .string("biggest_driver"), .string("action"), .string("watch_item"), .string("confidence"), .string("data_gap")]),
         ]
 
+        progress?(.requestPrepared)
+        progress?(.waitingForAI)
         let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        progress?(.responseReceived)
         let formatted = formatResult(raw, type: "weekly")
 
         let now = ISO8601DateFormatter().string(from: Date())
         let trendData = computeWeeklyTrend()
         let historyData = AnalysisHistoryData(type: "weekly", content: formatted, analysisDate: now, categoryChartJSON: nil, dailyChartJSON: chartJSON(trendData))
+        progress?(.savingResult)
         await saveAnalysisHistoryEntry(historyData)
 
         await incrementUsage("recap")
         let res = AIResult(text: formatted, categoryChart: [], dailyChart: trendData)
         currentWeeklyResult = res
+        progress?(.finished)
         return res
     }
 
-    func generateMonthlyAnalysis() async throws -> AIResult {
+    func generateMonthlyAnalysis(progress: AIProgressHandler? = nil) async throws -> AIResult {
+        progress?(.collectingData)
         let budget = currentBudget
         let s = spendSummary
         let cal = Calendar.current
@@ -883,17 +977,22 @@ final class AppViewModel {
             "required": .array([.string("headline"), .string("summary"), .string("budget_adherence"), .string("biggest_change"), .string("next_step"), .string("drivers"), .string("watch_item"), .string("confidence"), .string("data_gap")]),
         ]
 
+        progress?(.requestPrepared)
+        progress?(.waitingForAI)
         let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        progress?(.responseReceived)
         let formatted = formatResult(raw, type: "monthly")
 
         let now = ISO8601DateFormatter().string(from: Date())
         let catChart = computeCategoryBreakdown()
         let historyData = AnalysisHistoryData(type: "monthly", content: formatted, analysisDate: now, categoryChartJSON: chartJSON(catChart), dailyChartJSON: nil)
+        progress?(.savingResult)
         await saveAnalysisHistoryEntry(historyData)
 
         await incrementUsage("insight")
         let res = AIResult(text: formatted, categoryChart: catChart, dailyChart: [])
         currentMonthlyResult = res
+        progress?(.finished)
         return res
     }
 

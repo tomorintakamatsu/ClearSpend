@@ -41,6 +41,9 @@ final class SubscriptionDetectionService {
         let date: Date
     }
 
+    private static let averageDaysPerMonth = 365.2425 / 12.0
+    private static let weeksPerMonth = averageDaysPerMonth / 7.0
+
     // Map common App Store product ID patterns to friendly names
     private let nameMap: [String: String] = [
         "youtube": "YouTube Premium",
@@ -196,9 +199,8 @@ final class SubscriptionDetectionService {
             let normalized = normalizedName(name)
             guard normalized.count >= 3 else { return nil }
 
-            let amountBucket = Int((tx.amount * 100).rounded())
             return LocalCharge(
-                key: "\(normalized)#\(amountBucket)",
+                key: normalized,
                 name: name,
                 amount: tx.amount,
                 category: tx.category,
@@ -237,14 +239,24 @@ final class SubscriptionDetectionService {
             guard confidence >= (categoryBoost > 0 ? 0.52 : 0.62) else { return nil }
 
             guard let latest = ordered.last else { return nil }
-            var nextDate = calendar.date(byAdding: .day, value: Int(expectedDays.rounded()), to: latest.date) ?? latest.date
+            let customDays = interval == .custom ? max(1, Int(medianGap.rounded())) : nil
+            var nextDate = nextBillingDate(
+                after: latest.date,
+                interval: interval,
+                customDays: customDays,
+                calendar: calendar
+            )
             while nextDate <= today {
-                nextDate = calendar.date(byAdding: .day, value: Int(expectedDays.rounded()), to: nextDate) ?? nextDate
+                nextDate = nextBillingDate(
+                    after: nextDate,
+                    interval: interval,
+                    customDays: customDays,
+                    calendar: calendar
+                )
             }
 
             let category = ordered.reversed().first { $0.category != nil }?.category
             let displayName = mostCommonName(in: ordered)
-            let customDays = interval == .custom ? max(1, Int(medianGap.rounded())) : nil
             let cents = Int((medianAmount * 100).rounded())
             return InferredSubscription(
                 id: "\(normalizedName(displayName))#\(cents)#\(interval.rawValue)",
@@ -313,8 +325,26 @@ final class SubscriptionDetectionService {
         switch interval {
         case .weekly: return 7
         case .biweekly: return 14
-        case .monthly: return 30
+        case .monthly: return averageDaysPerMonth
         case .custom: return max(1, medianGap.rounded())
+        }
+    }
+
+    private static func nextBillingDate(
+        after date: Date,
+        interval: RecurringSubscription.BillingInterval,
+        customDays: Int?,
+        calendar: Calendar
+    ) -> Date {
+        switch interval {
+        case .weekly:
+            return calendar.date(byAdding: .day, value: 7, to: date) ?? date
+        case .biweekly:
+            return calendar.date(byAdding: .day, value: 14, to: date) ?? date
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: date) ?? date
+        case .custom:
+            return calendar.date(byAdding: .day, value: max(1, customDays ?? 30), to: date) ?? date
         }
     }
 
@@ -332,14 +362,14 @@ final class SubscriptionDetectionService {
         switch period {
         case "yearly": return value / 12
         case "monthly": return value
-        case "weekly": return value * 4.33
-        case "biweekly": return value * 2.165
-        case "daily": return value * 30
+        case "weekly": return value * weeksPerMonth
+        case "biweekly": return value * (weeksPerMonth / 2.0)
+        case "daily": return value * averageDaysPerMonth
         default:
             if let parsed = parseDynamicPeriod(period) {
                 switch parsed.unit {
-                case "day", "days": return value * (30 / Double(max(1, parsed.count)))
-                case "week", "weeks": return value * (4.33 / Double(max(1, parsed.count)))
+                case "day", "days": return value * (averageDaysPerMonth / Double(max(1, parsed.count)))
+                case "week", "weeks": return value * (weeksPerMonth / Double(max(1, parsed.count)))
                 case "month", "months": return value / Double(max(1, parsed.count))
                 case "year", "years": return value / (12 * Double(max(1, parsed.count)))
                 default: break

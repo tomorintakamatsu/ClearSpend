@@ -4,20 +4,19 @@ extension View {
     func cardStyle() -> some View {
         self
             .padding(18)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.08), lineWidth: 1)
             }
     }
 
     func gradientCard(colors: [Color]) -> some View {
-        self
+        let tint = colors.first ?? .primary
+
+        return self
             .padding(24)
-            .background(
-                LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
+            .premiumPanel(tint: tint)
     }
 
     func clearSpendScreenBackground(theme: AppTheme) -> some View {
@@ -28,22 +27,40 @@ extension View {
     }
 
     func premiumPanel(tint: Color? = nil) -> some View {
-        background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill((tint ?? Color.primary).opacity(0.018))
+                }
+        }
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.28),
-                                (tint ?? Color.primary).opacity(0.10)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.08), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.05), radius: 14, y: 8)
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke((tint ?? Color.primary).opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.035), radius: 14, y: 5)
+    }
+
+    func premiumActionFill(tint: Color, isEnabled: Bool = true) -> some View {
+        background(isEnabled ? tint : Color.gray.opacity(0.34), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(.white.opacity(isEnabled ? 0.16 : 0.08), lineWidth: 1)
+            }
+            .shadow(color: isEnabled ? tint.opacity(0.18) : .clear, radius: 14, y: 6)
+    }
+
+    func currencyAmountDisplay(minScale: CGFloat = 0.58) -> some View {
+        self
+            .lineLimit(1)
+            .minimumScaleFactor(minScale)
+            .allowsTightening(true)
+            .contentTransition(.numericText())
     }
 }
 
@@ -51,31 +68,7 @@ private struct PennyLetSurfaceBackground: View {
     let theme: AppTheme
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-
-            LinearGradient(
-                colors: [
-                    theme.primaryColor.opacity(0.13),
-                    theme.accentColor.opacity(0.07),
-                    Color(.systemBackground).opacity(0.96)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+        Color(.systemGroupedBackground)
             .ignoresSafeArea()
-
-            LinearGradient(
-                colors: [
-                    .white.opacity(0.18),
-                    .clear,
-                    theme.primaryColor.opacity(0.05)
-                ],
-                startPoint: .topTrailing,
-                endPoint: .bottomLeading
-            )
-            .ignoresSafeArea()
-        }
     }
 }

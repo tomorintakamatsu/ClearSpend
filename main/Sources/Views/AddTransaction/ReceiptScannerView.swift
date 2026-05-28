@@ -78,7 +78,7 @@ struct ReceiptScannerView: View {
                             let cat = editCategory.isEmpty ? extractedCategory : editCategory
                             let merchant = editMerchant.isEmpty ? extractedMerchant : editMerchant
                             let total = lineItems.isEmpty
-                                ? (Double(editAmount.replacingOccurrences(of: ",", with: "")) ?? extractedAmount ?? 0)
+                                ? (CurrencyFormat.parseInput(editAmount) ?? extractedAmount ?? 0)
                                 : lineItemTotal
                             onResult((total, cat, merchant))
                             dismiss()
@@ -109,10 +109,12 @@ struct ReceiptScannerView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "camera.viewfinder")
-                .font(.system(size: 54))
-                .foregroundStyle(viewModel.theme.primaryColor)
+        let tint = viewModel.theme.primaryColor
+        let scanReceiptLabel = viewModel.loc("Scan Receipt")
+        let choosePhotoLabel = viewModel.loc("Choose Photo")
+
+        return VStack(spacing: 20) {
+            PennyLetIconTile(symbol: "camera.viewfinder", tint: Color(.systemBlue), size: 62, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(viewModel.loc("Take a photo of your receipt"))
                 .font(.title3.weight(.semibold))
             Text(viewModel.loc("We'll extract the merchant, amount, and category automatically."))
@@ -124,21 +126,21 @@ struct ReceiptScannerView: View {
                 Button {
                     showDocumentScanner = true
                 } label: {
-                    Label(viewModel.loc("Scan Receipt"), systemImage: "doc.text.viewfinder")
+                    Label(scanReceiptLabel, systemImage: "doc.text.viewfinder")
                         .font(.headline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(viewModel.theme.primaryColor, in: RoundedRectangle(cornerRadius: 8))
+                        .background(tint, in: RoundedRectangle(cornerRadius: 8))
                 }
 
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Label(viewModel.loc("Choose Photo"), systemImage: "photo.on.rectangle")
+                    Label(choosePhotoLabel, systemImage: "photo.on.rectangle")
                         .font(.headline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
-                        .background(viewModel.theme.primaryColor, in: RoundedRectangle(cornerRadius: 8))
+                        .background(tint, in: RoundedRectangle(cornerRadius: 8))
                 }
             }
         }
@@ -147,7 +149,7 @@ struct ReceiptScannerView: View {
 
     private var lineItemTotal: Double {
         lineItems.reduce(0.0) { total, item in
-            let price = Double(item.editPrice.replacingOccurrences(of: ",", with: "")) ?? item.price
+            let price = CurrencyFormat.parseInput(item.editPrice) ?? item.price
             return total + (item.price > 0 ? price : 0)
         }
     }
@@ -155,8 +157,7 @@ struct ReceiptScannerView: View {
     private func extractedPreview(amount: Double) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 28, symbolScale: 0.42, shape: .circle)
                 Text(viewModel.loc("Review & Edit"))
                     .font(.headline)
                 Spacer()
@@ -167,9 +168,15 @@ struct ReceiptScannerView: View {
 
             if !lineItems.isEmpty {
                 // Header row
-                HStack {
-                    Text(viewModel.loc("Item")).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(viewModel.loc("Price")).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                HStack(spacing: 8) {
+                    Text(viewModel.loc("Item"))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(viewModel.loc("Price"))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 72, alignment: .trailing)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 .font(.caption.weight(.semibold))
                 Divider()
@@ -182,7 +189,9 @@ struct ReceiptScannerView: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .font(.subheadline.weight(.medium))
-                            .frame(width: 80)
+                            .frame(minWidth: 72)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
                     Divider()
                 }
@@ -195,19 +204,30 @@ struct ReceiptScannerView: View {
                     Text(CurrencyFormat.format(lineItemTotal, currency: viewModel.currency))
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(viewModel.theme.primaryColor)
+                        .currencyAmountDisplay(minScale: 0.54)
                 }
                 .padding(.top, 4)
             }
 
             // Merchant & Category
             VStack(spacing: 8) {
-                HStack {
-                    Text(viewModel.loc("Merchant")).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
-                    TextField(viewModel.loc("Merchant"), text: $editMerchant).multilineTextAlignment(.trailing)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(viewModel.loc("Merchant"))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 72, alignment: .leading)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    TextField(viewModel.loc("Merchant"), text: $editMerchant)
+                        .multilineTextAlignment(.trailing)
                 }
-                HStack {
-                    Text(viewModel.loc("Category")).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
-                    TextField(viewModel.loc("Category"), text: $editCategory).multilineTextAlignment(.trailing)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(viewModel.loc("Category"))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 72, alignment: .leading)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    TextField(viewModel.loc("Category"), text: $editCategory)
+                        .multilineTextAlignment(.trailing)
                 }
             }
             .font(.subheadline)
@@ -447,6 +467,17 @@ struct DocumentScannerView: UIViewControllerRepresentable {
         Coordinator(self)
     }
 
+    @MainActor
+    fileprivate func finish(with image: UIImage?) {
+        self.image = image
+        dismiss()
+    }
+
+    @MainActor
+    fileprivate func cancel() {
+        dismiss()
+    }
+
     class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
         let parent: DocumentScannerView
 
@@ -456,19 +487,19 @@ struct DocumentScannerView: UIViewControllerRepresentable {
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
             guard scan.pageCount > 0 else {
-                parent.dismiss()
+                Task { @MainActor [parent] in parent.cancel() }
                 return
             }
-            parent.image = scan.imageOfPage(at: 0)
-            parent.dismiss()
+            let image = scan.imageOfPage(at: 0)
+            Task { @MainActor [parent] in parent.finish(with: image) }
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            parent.dismiss()
+            Task { @MainActor [parent] in parent.cancel() }
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
-            parent.dismiss()
+            Task { @MainActor [parent] in parent.cancel() }
         }
     }
 }

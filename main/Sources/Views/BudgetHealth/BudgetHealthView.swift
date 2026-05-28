@@ -10,16 +10,22 @@ struct BudgetHealthView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                if let budget = viewModel.currentBudget {
+                if viewModel.isBlockVisible(.budgetOverview), let budget = viewModel.currentBudget {
                     budgetOverview(budget)
                         .modifier(CardEntrance())
                 }
-                pieChartSection
-                    .modifier(CardEntrance())
-                barChartSection
-                    .modifier(CardEntrance())
-                statCardsSection
-                    .modifier(CardEntrance())
+                if viewModel.isBlockVisible(.budgetCategories) {
+                    pieChartSection
+                        .modifier(CardEntrance())
+                }
+                if viewModel.isBlockVisible(.budgetIncomeChart) {
+                    barChartSection
+                        .modifier(CardEntrance())
+                }
+                if viewModel.isBlockVisible(.budgetKeyNumbers) {
+                    statCardsSection
+                        .modifier(CardEntrance())
+                }
             }
             .padding(20)
             .padding(.bottom, 100)
@@ -35,54 +41,50 @@ struct BudgetHealthView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(viewModel.loc("Monthly Disposable"))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.68))
+                        .foregroundStyle(viewModel.theme.primaryColor)
                     Text(CurrencyFormat.format(summary.monthlyDisposable, currency: viewModel.currency))
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .currencyAmountDisplay(minScale: 0.54)
                 }
 
                 Spacer()
 
-                Image(systemName: summary.isOverBudget ? "exclamationmark.triangle.fill" : "heart.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+                PennyLetIconTile(
+                    symbol: summary.isOverBudget ? "exclamationmark.triangle.fill" : "heart.fill",
+                    tint: summary.isOverBudget ? Color(.systemRed) : Color(.systemPink),
+                    size: 42,
+                    shape: .circle,
+                    isProminent: true
+                )
             }
 
-            HStack {
+            HStack(alignment: .top, spacing: 10) {
                 Text("\(Int(summary.spendPercent))" + viewModel.loc("% of budget used"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.72))
-                Spacer()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
                 Text(CurrencyFormat.format(summary.remaining, currency: viewModel.currency))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(.headline.weight(.bold).monospacedDigit())
+                    .foregroundStyle(summary.isOverBudget ? .red : viewModel.theme.primaryColor)
+                    .currencyAmountDisplay(minScale: 0.54)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(
-            LinearGradient(
-                colors: viewModel.theme.gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
-        }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.20), radius: 18, y: 10)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 
     private var pieChartSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(viewModel.loc("Spending by Category"))
-                .font(.headline)
+            HStack {
+                PennyLetIconTile(symbol: "chart.pie.fill", tint: Color(.systemOrange), size: 30, symbolScale: 0.43, shape: .circle)
+                Text(viewModel.loc("Spending by Category"))
+                    .font(.headline)
+                Spacer()
+            }
 
             if breakdown.isEmpty {
                 Text(viewModel.loc("No spending data this month"))
@@ -103,15 +105,19 @@ struct BudgetHealthView: View {
 
                 VStack(spacing: 8) {
                     ForEach(breakdown.prefix(6)) { item in
-                        HStack {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Circle()
                                 .fill(item.category.color)
                                 .frame(width: 10, height: 10)
                             Text(viewModel.loc(item.category.label))
                                 .font(.caption)
-                            Spacer()
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                            Spacer(minLength: 8)
                             Text(CurrencyFormat.format(item.amount, currency: viewModel.currency))
-                                .font(.caption.weight(.medium))
+                                .font(.caption.weight(.medium).monospacedDigit())
+                                .currencyAmountDisplay(minScale: 0.54)
                         }
                     }
                 }
@@ -123,8 +129,12 @@ struct BudgetHealthView: View {
 
     private var barChartSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(viewModel.loc("Income vs Spending"))
-                .font(.headline)
+            HStack {
+                PennyLetIconTile(symbol: "chart.bar.xaxis", tint: Color(.systemBlue), size: 30, symbolScale: 0.43, shape: .capsule)
+                Text(viewModel.loc("Income vs Spending"))
+                    .font(.headline)
+                Spacer()
+            }
 
             Chart {
                 BarMark(
@@ -157,11 +167,22 @@ struct BudgetHealthView: View {
     }
 
     private var statCardsSection: some View {
-        HStack(spacing: 12) {
-            statCard(viewModel.loc("Remaining"), value: summary.remaining, color: summary.isOverBudget ? .red : .green)
-            statCard(viewModel.loc("Safe Daily"), value: summary.safeDaily, color: viewModel.theme.primaryColor)
-            statCard(viewModel.loc("Days Left"), value: Double(summary.daysLeft), color: .blue, isWhole: true)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                PennyLetIconTile(symbol: "number.square.fill", tint: Color(.systemIndigo), size: 30, symbolScale: 0.43, shape: .diamond)
+                Text(viewModel.loc("Key numbers"))
+                    .font(.headline)
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                statCard(viewModel.loc("Remaining"), value: summary.remaining, color: summary.isOverBudget ? .red : .green)
+                statCard(viewModel.loc("Safe Daily"), value: summary.safeDaily, color: viewModel.theme.primaryColor)
+                statCard(viewModel.loc("Days Left"), value: Double(summary.daysLeft), color: .blue, isWhole: true)
+            }
         }
+        .padding(18)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 
     private func statCard(_ title: String, value: Double, color: Color, isWhole: Bool = false) -> some View {
@@ -169,18 +190,21 @@ struct BudgetHealthView: View {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Text(isWhole
                 ? "\(Int(value))"
                 : CurrencyFormat.format(value, currency: viewModel.currency)
             )
-            .font(.subheadline.weight(.bold))
+            .font(.headline.weight(.bold).monospacedDigit())
             .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .currencyAmountDisplay(minScale: 0.52)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(color.opacity(0.12), lineWidth: 1)

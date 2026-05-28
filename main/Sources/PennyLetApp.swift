@@ -34,7 +34,7 @@ struct PennyLetApp: App {
             .task {
                 viewModel.loadPreferencesFromDisk()
                 viewModel.loadLocalData()
-                await NotificationService.shared.registerForPushNotifications()
+                _ = await NotificationService.shared.registerForPushNotifications()
                 viewModel.isLoading = false
             }
             .tint(viewModel.theme.primaryColor)

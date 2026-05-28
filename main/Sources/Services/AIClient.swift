@@ -14,9 +14,9 @@ actor AIClient {
 
     private init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 180
-        config.timeoutIntervalForResource = 240
-        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 70
+        config.timeoutIntervalForResource = 90
+        config.waitsForConnectivity = false
         config.allowsExpensiveNetworkAccess = true
         config.allowsConstrainedNetworkAccess = true
         session = URLSession(configuration: config)
@@ -40,7 +40,7 @@ actor AIClient {
                     modelTier: tier
                 )
                 let request = try buildRequest(APIConstants.aiProxyURL, body: body, timeout: timeout(for: tier))
-                return try await perform(request, retryCount: tier == .standard ? 1 : 0)
+                return try await perform(request, retryCount: 0)
             } catch {
                 lastError = error
                 guard tier == .pro, isRetryable(error) else {
@@ -93,7 +93,7 @@ actor AIClient {
     }
 
     private func timeout(for tier: AIModelTier) -> TimeInterval {
-        tier == .pro ? 55 : 120
+        tier == .pro ? 60 : 70
     }
 
     private func buildRequest(_ urlString: String, body: some Encodable, timeout: TimeInterval) throws -> URLRequest {
@@ -202,7 +202,7 @@ enum ClientError: LocalizedError {
         case .unauthorized: "AI service is unavailable. Please try again."
         case .notFound: "Resource not found"
         case .validationFailed(let message): message
-        case .requestTimedOut: "AI request timed out. Please try again."
+        case .requestTimedOut: "AI request timed out. Please check your connection and try again."
         case .serverError: "AI service is unavailable. Please try again."
         case .httpError(let code): "HTTP error (\(code))"
         }

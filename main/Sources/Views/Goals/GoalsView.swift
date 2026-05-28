@@ -3,14 +3,17 @@ import SwiftUI
 struct GoalsView: View {
     @Environment(AppViewModel.self) private var viewModel
     @State private var showAddSheet = false
+    @State private var pendingDeleteGoal: Goal?
 
     var body: some View {
         List {
-            Section {
-                GoalsHeroCard(goals: viewModel.goals, currency: viewModel.currency)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
-                    .listRowBackground(Color.clear)
+            if viewModel.isBlockVisible(.goalsOverview) {
+                Section {
+                    GoalsHeroCard(goals: viewModel.goals, currency: viewModel.currency)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                        .listRowBackground(Color.clear)
+                }
             }
 
             if viewModel.goals.isEmpty {
@@ -26,9 +29,9 @@ struct GoalsView: View {
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
                         .listRowBackground(Color.clear)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                Task { await viewModel.deleteGoal(goal) }
+                                pendingDeleteGoal = goal
                             } label: {
                                 Label(viewModel.loc("Delete"), systemImage: "trash")
                             }
@@ -51,6 +54,25 @@ struct GoalsView: View {
         .sheet(isPresented: $showAddSheet) {
             AddGoalView()
         }
+        .confirmationDialog(
+            viewModel.loc("Delete Goal?"),
+            isPresented: Binding(
+                get: { pendingDeleteGoal != nil },
+                set: { if !$0 { pendingDeleteGoal = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(viewModel.loc("Delete"), role: .destructive) {
+                guard let goal = pendingDeleteGoal else { return }
+                pendingDeleteGoal = nil
+                Task { await viewModel.deleteGoal(goal) }
+            }
+            Button(viewModel.cancelLabel, role: .cancel) {
+                pendingDeleteGoal = nil
+            }
+        } message: {
+            Text(viewModel.loc("This cannot be undone."))
+        }
     }
 }
 
@@ -69,48 +91,37 @@ private struct GoalsHeroCard: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "target")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+            PennyLetIconTile(symbol: "target", tint: Color(.systemIndigo), size: 44, shape: .circle, isProminent: true)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.loc("Savings direction"))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.68))
                 Text(CurrencyFormat.format(saved, currency: currency))
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 32, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .currencyAmountDisplay(minScale: 0.54)
+                Text(viewModel.loc("Savings direction"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .minimumScaleFactor(0.75)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 10)
 
             VStack(alignment: .trailing, spacing: 4) {
                 Text("\(goals.count)")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
                 Text(target > 0 ? viewModel.loc("active goals") : viewModel.loc("goals"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.68))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.trailing)
             }
         }
         .padding(18)
-        .background(
-            LinearGradient(
-                colors: viewModel.theme.gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
-        }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.20), radius: 18, y: 10)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 }
 
@@ -119,29 +130,35 @@ struct GoalRow: View {
     let currency: String
     let theme: AppTheme
     @Environment(AppViewModel.self) private var viewModel
+    @State private var showsControls = false
 
     var body: some View {
         VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "flag.checkered")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(theme.primaryColor)
-                    .frame(width: 30, height: 30)
-                    .background(theme.primaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            HStack(alignment: .top, spacing: 10) {
+                PennyLetIconTile(symbol: "flag.checkered", tint: Color(.systemIndigo), size: 32, symbolScale: 0.4, shape: .diamond)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(goal.name)
                         .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("\(Int(goal.progress * 100))" + viewModel.loc("% complete"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
-                Spacer()
-                Text(CurrencyFormat.format(goal.currentAmount, currency: currency))
-                    .font(.subheadline.weight(.bold))
-                    + Text(" / \(CurrencyFormat.format(goal.targetAmount, currency: currency))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .layoutPriority(1)
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(CurrencyFormat.format(goal.currentAmount, currency: currency))
+                        .font(.headline.weight(.bold).monospacedDigit())
+                        .currencyAmountDisplay(minScale: 0.54)
+                    Text("/ \(CurrencyFormat.format(goal.targetAmount, currency: currency))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .currencyAmountDisplay(minScale: 0.54)
+                }
             }
 
             GeometryReader { geo in
@@ -150,27 +167,44 @@ struct GoalRow: View {
                         .fill(.quaternary)
                         .frame(height: 10)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [theme.primaryColor, theme.accentColor.opacity(0.85)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .fill(theme.primaryColor)
                         .frame(width: geo.size.width * CGFloat(goal.progress), height: 10)
                 }
             }
             .frame(height: 10)
 
-            HStack {
-                quickAddButton(10)
-                quickAddButton(50)
-                quickAddButton(100)
-                quickAddButton(500)
+            Button {
+                withAnimation(AnimationPresets.fold) {
+                    showsControls.toggle()
+                }
+            } label: {
+                HStack {
+                    Label(viewModel.loc("Add money"), systemImage: "plus.circle.fill")
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    Image(systemName: showsControls ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(theme.primaryColor)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(theme.primaryColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            if showsControls {
+                HStack(spacing: 8) {
+                    quickAddButton(10)
+                    quickAddButton(50)
+                    quickAddButton(100)
+                    quickAddButton(500)
+                }
+                .transition(.foldReveal)
             }
         }
         .padding(16)
         .premiumPanel(tint: theme.primaryColor)
+        .animation(AnimationPresets.fold, value: showsControls)
     }
 
     private func quickAddButton(_ amount: Double) -> some View {
@@ -180,12 +214,33 @@ struct GoalRow: View {
             }
         } label: {
             Text("+\(CurrencyFormat.format(amount, currency: currency))")
-                .font(.caption2.weight(.medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(theme.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .currencyAmountDisplay(minScale: 0.5)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GoalQuickAddButtonStyle(theme: theme))
+    }
+}
+
+private struct GoalQuickAddButtonStyle: ButtonStyle {
+    let theme: AppTheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(configuration.isPressed ? .white : theme.primaryColor)
+            .background(
+                configuration.isPressed ? theme.primaryColor : theme.primaryColor.opacity(0.10),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(theme.primaryColor.opacity(configuration.isPressed ? 0.0 : 0.16), lineWidth: 1)
+            }
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .shadow(color: configuration.isPressed ? theme.primaryColor.opacity(0.18) : .clear, radius: 10, y: 5)
+            .animation(.spring(response: 0.22, dampingFraction: 0.72), value: configuration.isPressed)
     }
 }
 
@@ -198,7 +253,7 @@ struct AddGoalView: View {
     @State private var frequency = "monthly"
 
     private var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty && (Double(targetAmount) ?? 0) > 0
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && (CurrencyFormat.parseInput(targetAmount) ?? 0) > 0
     }
 
     var body: some View {
@@ -234,11 +289,11 @@ struct AddGoalView: View {
     }
 
     private func save() {
-        guard let target = Double(targetAmount), target > 0 else { return }
+        guard let target = CurrencyFormat.parseInput(targetAmount), target > 0 else { return }
         let data = GoalData(
             name: name.trimmingCharacters(in: .whitespaces),
             targetAmount: target,
-            currentAmount: Double(currentAmount) ?? 0,
+            currentAmount: CurrencyFormat.parseInput(currentAmount) ?? 0,
             frequency: frequency
         )
         Task {

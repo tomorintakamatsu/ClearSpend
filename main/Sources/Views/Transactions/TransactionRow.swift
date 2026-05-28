@@ -17,32 +17,35 @@ struct TransactionRow: View {
     private var rowContent: some View {
         HStack(spacing: 12) {
             let cat = AppCategory.category(for: transaction.category, type: transaction.type)
-            Image(systemName: cat.icon)
-                .font(.caption)
-                .foregroundStyle(cat.color)
-                .frame(width: 34, height: 34)
-                .background(cat.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            PennyLetIconTile(symbol: cat.icon, tint: cat.color, size: 36, symbolScale: 0.4, shape: tileShape(for: cat.id))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(transaction.merchant ?? transaction.note ?? viewModel.loc(cat.label))
                     .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(viewModel.loc(cat.label))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 10)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(CurrencyFormat.formatSigned(transaction.signedAmount, currency: currency))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(transaction.type == .income ? .green : .primary)
+                    .currencyAmountDisplay(minScale: 0.52)
                 if let origCurrency = transaction.originalCurrency,
                    let origAmount = transaction.originalAmount {
                     let signedOrig = transaction.type == .expense ? -origAmount : origAmount
                     Text(CurrencyFormat.formatForeignSigned(signedOrig, currency: origCurrency))
-                        .font(.caption2)
+                        .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
+                        .currencyAmountDisplay(minScale: 0.56)
                 }
                 if let date = transaction.dateValue {
                     Text(date, format: .dateTime.hour().minute())
@@ -50,6 +53,15 @@ struct TransactionRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+        }
+    }
+
+    private func tileShape(for id: String) -> PennyLetIconShape {
+        switch id {
+        case "food", "salary", "shopping", "rent": return .circle
+        case "transport", "subscriptions", "freelance": return .capsule
+        case "health", "gifts", "gift_in": return .diamond
+        default: return .roundedSquare
         }
     }
 }
@@ -62,9 +74,9 @@ private struct TransactionRowSurface: ViewModifier {
             content
         } else {
             content
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(.white.opacity(0.18), lineWidth: 1)
                 }
                 .shadow(color: .black.opacity(0.04), radius: 10, y: 6)

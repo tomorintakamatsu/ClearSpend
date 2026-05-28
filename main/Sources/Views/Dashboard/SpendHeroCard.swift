@@ -7,76 +7,95 @@ struct SpendHeroCard: View {
     let theme: AppTheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(viewModel.loc("Safe to Spend Today"))
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.70))
-                    Text(viewModel.loc("Daily spending lane"))
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(theme.primaryColor)
                 }
 
                 Spacer()
 
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+                Text(summary.isOverBudget ? viewModel.loc("Over budget") : viewModel.loc("On track"))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(summary.isOverBudget ? Color(.systemRed) : theme.primaryColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background((summary.isOverBudget ? Color(.systemRed) : theme.primaryColor).opacity(0.10), in: Capsule(style: .continuous))
             }
 
-            Text(CurrencyFormat.format(summary.safeDaily, currency: currency))
-                .font(.system(size: 46, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+            HStack(alignment: .center, spacing: 18) {
+                Text(CurrencyFormat.format(summary.safeDaily, currency: currency))
+                    .font(.system(size: 54, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .currencyAmountDisplay(minScale: 0.56)
+                    .layoutPriority(1)
 
-            progressBar
-
-            HStack {
-                Label("\(summary.daysLeft)" + viewModel.loc("d left"), systemImage: "calendar")
-                Spacer()
-                Text("\(Int(summary.spendPercent))" + viewModel.loc("% used"))
+                SpendRing(progress: min(summary.spendPercent / 100, 1), tint: theme.primaryColor, isOverBudget: summary.isOverBudget)
+                    .frame(width: 60, height: 60)
+                    .accessibilityHidden(true)
             }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.64))
+
+            VStack(spacing: 12) {
+                progressBar
+
+                HStack(alignment: .lastTextBaseline) {
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text("\(summary.daysLeft)")
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.primary)
+                        Text(viewModel.loc("d left"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+
+                    Spacer(minLength: 12)
+
+                    Text("\(Int(summary.spendPercent.rounded()))%")
+                        .font(.title3.weight(.bold).monospacedDigit())
+                        .foregroundStyle(summary.isOverBudget ? Color(.systemRed) : theme.primaryColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
+                }
+            }
         }
-        .padding(24)
-        .background(
-            LinearGradient(
-                colors: theme.gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay(alignment: .bottomTrailing) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 86, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.08))
-                .offset(x: 16, y: 18)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
-        }
-        .shadow(color: theme.primaryColor.opacity(0.26), radius: 20, y: 10)
+        .padding(26)
+        .premiumPanel(tint: theme.primaryColor)
     }
 
     private var progressBar: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(.white.opacity(0.2))
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(.quaternary)
                     .frame(height: 8)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(.white)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(theme.primaryColor)
                     .frame(width: geo.size.width * CGFloat(min(summary.spendPercent / 100, 1)), height: 8)
             }
         }
         .frame(height: 8)
+    }
+}
+
+private struct SpendRing: View {
+    let progress: Double
+    let tint: Color
+    let isOverBudget: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.quaternary, lineWidth: 8)
+            Circle()
+                .trim(from: 0, to: max(0.04, progress))
+                .stroke(isOverBudget ? Color(.systemRed) : tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
     }
 }

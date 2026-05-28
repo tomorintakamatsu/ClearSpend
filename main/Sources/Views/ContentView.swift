@@ -7,81 +7,102 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showUpgrade = false
     @State private var fabScale: CGFloat = 1
+    @State private var homePath = NavigationPath()
+    @State private var activityPath = NavigationPath()
+    @State private var goalsPath = NavigationPath()
+    @State private var aiPath = NavigationPath()
+    @State private var morePath = NavigationPath()
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             TabView(selection: $selectedTab) {
-                NavigationStack {
-                    DashboardView(showAddSheet: $showAddSheet)
+                NavigationStack(path: $homePath) {
+                    DashboardView()
                         .toolbar { settingsButton }
                 }
                 .tabItem { Label(viewModel.homeTab, systemImage: "house.fill") }
                 .tag(0)
 
-                NavigationStack {
+                NavigationStack(path: $activityPath) {
                     TransactionListView()
                         .toolbar { settingsButton }
                 }
                 .tabItem { Label(viewModel.activityTab, systemImage: "list.bullet") }
                 .tag(1)
 
-                NavigationStack {
+                NavigationStack(path: $goalsPath) {
                     GoalsView()
                         .toolbar { settingsButton }
                 }
                 .tabItem { Label(viewModel.goalsTab, systemImage: "target") }
                 .tag(2)
 
-                NavigationStack {
+                NavigationStack(path: $aiPath) {
                     AIFeaturesView()
                         .toolbar { settingsButton }
                 }
                 .tabItem { Label(viewModel.aiTab, systemImage: "sparkles") }
                 .tag(3)
 
-                NavigationStack {
+                NavigationStack(path: $morePath) {
                     MoreView()
                         .toolbar { settingsButton }
+                        .navigationDestination(for: MoreRoute.self) { route in
+                            switch route {
+                            case .subscriptions:
+                                SubscriptionTrackerView()
+                            case .budgetHealth:
+                                BudgetHealthView()
+                            }
+                        }
                 }
                 .tabItem { Label(viewModel.moreTab, systemImage: "ellipsis.circle.fill") }
                 .tag(4)
             }
             .id(viewModel.language)
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedTab)
-
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
-                    fabScale = 0.85
+            .onChange(of: selectedTab) { oldValue, newValue in
+                if oldValue != newValue {
+                    Haptics.selection()
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) {
-                        fabScale = 1
-                    }
-                    showAddSheet = true
-                }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(
-                        LinearGradient(
-                            colors: [viewModel.theme.primaryColor, viewModel.theme.accentColor],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: Circle()
-                    )
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.35), lineWidth: 1)
-                    }
-                    .shadow(color: viewModel.theme.primaryColor.opacity(0.35), radius: 18, y: 8)
-                    .scaleEffect(fabScale)
             }
-            .padding(.trailing, 20)
-            .padding(.bottom, 90)
+
+            if shouldShowAddButton {
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+                        fabScale = 0.85
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) {
+                            fabScale = 1
+                        }
+                        showAddSheet = true
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background {
+                            Circle()
+                                .fill(viewModel.theme.primaryColor)
+                        }
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(0.35), lineWidth: 1)
+                        }
+                        .shadow(color: viewModel.theme.primaryColor.opacity(0.35), radius: 18, y: 8)
+                        .scaleEffect(fabScale)
+                        .rotationEffect(.degrees(fabScale < 1 ? 10 : 0))
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 20)
+                .padding(.bottom, 90)
+                .transition(.scale(scale: 0.86).combined(with: .opacity))
+                .accessibilityLabel(viewModel.addTransactionTitle)
+            }
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: shouldShowAddButton)
         .sheet(isPresented: $showAddSheet) {
             AddTransactionView()
         }
@@ -108,25 +129,62 @@ struct ContentView: View {
         .onChange(of: viewModel.isPro) { _, _ in }
     }
 
-    private var settingsButton: some ToolbarContent {
-        ToolbarItemGroup(placement: .navigationBarTrailing) {
-            if !viewModel.isPro {
-                Button {
-                    showUpgrade = true
-                } label: {
-                    Image(systemName: "crown.fill")
-                        .font(.caption)
-                        .foregroundStyle(.yellow)
-                }
-            }
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .foregroundStyle(.secondary)
-            }
+    private var shouldShowAddButton: Bool {
+        switch selectedTab {
+        case 0:
+            return homePath.count == 0
+        case 1:
+            return activityPath.count == 0
+        case 2:
+            return goalsPath.count == 0
+        case 3:
+            return aiPath.count == 0
+        case 4:
+            return morePath.count == 0
+        default:
+            return true
         }
     }
+
+    private var settingsButton: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            HStack(spacing: 10) {
+                if !viewModel.isPro {
+                    Button {
+                        Haptics.selection()
+                        showUpgrade = true
+                    } label: {
+                        Image(systemName: "crown.fill")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(Color(.systemYellow))
+                            .frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(viewModel.upgradeToProLabel)
+                }
+
+                Button {
+                    Haptics.selection()
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.settingsTitle)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+}
+
+private enum MoreRoute: Hashable {
+    case subscriptions
+    case budgetHealth
 }
 
 private struct MoreView: View {
@@ -135,31 +193,29 @@ private struct MoreView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                MoreHeaderCard()
+                if viewModel.isBlockVisible(.moreOverview) {
+                    MoreHeaderCard()
+                }
 
                 VStack(spacing: 12) {
-                    NavigationLink {
-                        SubscriptionTrackerView()
-                    } label: {
+                    NavigationLink(value: MoreRoute.subscriptions) {
                         MoreDestinationCard(
                             icon: "creditcard.fill",
                             title: viewModel.loc("Subscriptions"),
-                            subtitle: viewModel.loc("Track recurring charges and renewal dates."),
-                            tint: viewModel.theme.primaryColor,
-                            metric: "\(viewModel.recurringSubscriptions.filter(\.isActive).count)"
+                            tint: Color(.systemTeal),
+                            metric: "\(viewModel.recurringSubscriptions.filter(\.isActive).count)",
+                            shape: .circle
                         )
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink {
-                        BudgetHealthView()
-                    } label: {
+                    NavigationLink(value: MoreRoute.budgetHealth) {
                         MoreDestinationCard(
                             icon: "heart.fill",
                             title: viewModel.loc("Budget Health"),
-                            subtitle: viewModel.loc("See pacing, category pressure, and monthly health."),
-                            tint: .pink,
-                            metric: "\(Int(viewModel.spendSummary.spendPercent))%"
+                            tint: Color(.systemPink),
+                            metric: "\(Int(viewModel.spendSummary.spendPercent))%",
+                            shape: .diamond
                         )
                     }
                     .buttonStyle(.plain)
@@ -170,18 +226,7 @@ private struct MoreView: View {
             .padding(.bottom, 110)
         }
         .navigationTitle(viewModel.moreTab)
-        .background(
-            LinearGradient(
-                colors: [
-                    viewModel.theme.primaryColor.opacity(0.10),
-                    viewModel.theme.accentColor.opacity(0.08),
-                    Color(.systemBackground)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
+        .clearSpendScreenBackground(theme: viewModel.theme)
     }
 }
 
@@ -189,24 +234,16 @@ private struct MoreHeaderCard: View {
     @Environment(AppViewModel.self) private var viewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewModel.loc("Money cockpit"))
                         .font(.title2.weight(.bold))
-                    Text(viewModel.loc("Subscriptions and deeper budget checks live here. Settings stays in the top corner."))
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.78))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(.primary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer()
-
-                Image(systemName: "sparkles")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+                PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 42, shape: .circle)
             }
 
             HStack(spacing: 10) {
@@ -220,27 +257,8 @@ private struct MoreHeaderCard: View {
                 )
             }
         }
-        .foregroundStyle(.white)
         .padding(22)
-        .background(
-            LinearGradient(
-                colors: [
-                    viewModel.theme.primaryColor,
-                    viewModel.theme.primaryColor.opacity(0.78),
-                    viewModel.theme.accentColor.opacity(0.86)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay(alignment: .topTrailing) {
-            Image(systemName: "chart.pie.fill")
-                .font(.system(size: 86))
-                .foregroundStyle(.white.opacity(0.10))
-                .offset(x: 18, y: -14)
-        }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.24), radius: 22, y: 12)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 }
 
@@ -252,63 +270,54 @@ private struct MiniMoreStat: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+                .fixedSize(horizontal: false, vertical: true)
             Text(value)
-                .font(.subheadline.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .font(.headline.weight(.bold).monospacedDigit())
+                .currencyAmountDisplay(minScale: 0.56)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
 private struct MoreDestinationCard: View {
     let icon: String
     let title: String
-    let subtitle: String
     let tint: Color
     let metric: String
+    var shape: PennyLetIconShape = .roundedSquare
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        LinearGradient(
-                            colors: [tint.opacity(0.22), tint.opacity(0.08)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 56, height: 56)
-                Image(systemName: icon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(tint)
-            }
+        HStack(alignment: .top, spacing: 14) {
+            PennyLetIconTile(symbol: icon, tint: tint, size: 54, symbolScale: 0.42, shape: shape, isProminent: true)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.headline)
+                    .font(.title3.weight(.bold))
                     .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.78)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             VStack(spacing: 5) {
                 Text(metric)
-                    .font(.subheadline.weight(.bold))
+                    .font(.title3.weight(.bold).monospacedDigit())
                     .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
+            .frame(minWidth: 36, alignment: .trailing)
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))

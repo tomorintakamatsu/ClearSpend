@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var developerTapCount = 0
     @State private var showDeveloperControls = false
     @State private var showDeveloperUnlockAlert = false
+    @State private var showUpgrade = false
 
     // Editable budget fields
     @State private var incomeText: String = ""
@@ -34,7 +35,11 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            if !viewModel.isPro {
+                proSection
+            }
             appearanceSection
+            visibleBlocksSection
             budgetSection
             preferencesSection
             analysisSection
@@ -87,6 +92,41 @@ struct SettingsView: View {
             Button(viewModel.okLabel, role: .cancel) {}
         } message: {
             Text(viewModel.developerUnlockMessage)
+        }
+        .sheet(isPresented: $showUpgrade) {
+            UpgradeView()
+        }
+    }
+
+    private var proSection: some View {
+        Section {
+            Button {
+                showUpgrade = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "crown.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.yellow)
+                        .frame(width: 34, height: 34)
+                        .background(.yellow.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.loc("PennyLet Pro"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(viewModel.upgradeToProLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -155,6 +195,57 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Visible Blocks
+
+    private var visibleBlocksSection: some View {
+        Section(viewModel.loc("Visible Blocks")) {
+            DisclosureGroup(viewModel.homeTab) {
+                blockToggle(.homeSafeToSpend, title: viewModel.loc("Safe to Spend Today"))
+                blockToggle(.homeMonthlyPulse, title: viewModel.loc("Monthly pulse"))
+                blockToggle(.homeTopCategories, title: viewModel.loc("Top Categories"))
+                blockToggle(.homeRecentActivity, title: viewModel.loc("Recent Activity"))
+            }
+
+            DisclosureGroup(viewModel.activityTab) {
+                blockToggle(.activityFilter, title: viewModel.loc("Filter"))
+                blockToggle(.activitySummary, title: viewModel.loc("Activity Summary"))
+            }
+
+            DisclosureGroup(viewModel.goalsTab) {
+                blockToggle(.goalsOverview, title: viewModel.loc("Savings direction"))
+            }
+
+            DisclosureGroup(viewModel.aiTab) {
+                blockToggle(.aiIntro, title: viewModel.loc("PennyLet Intelligence"))
+                blockToggle(.aiUsage, title: viewModel.loc("Usage"))
+                blockToggle(.aiHistory, title: viewModel.loc("AI History"))
+            }
+
+            DisclosureGroup(viewModel.moreTab) {
+                blockToggle(.moreOverview, title: viewModel.loc("Money cockpit"))
+                blockToggle(.subscriptionsOverview, title: viewModel.loc("Active Subscriptions"))
+                blockToggle(.subscriptionsSuggestions, title: viewModel.loc("Suggested subscriptions"))
+                blockToggle(.budgetOverview, title: viewModel.loc("Budget Overview"))
+                blockToggle(.budgetCategories, title: viewModel.loc("Spending by Category"))
+                blockToggle(.budgetIncomeChart, title: viewModel.loc("Income vs Spending"))
+                blockToggle(.budgetKeyNumbers, title: viewModel.loc("Key numbers"))
+            }
+
+            Button {
+                viewModel.resetVisibleBlocks()
+            } label: {
+                Label(viewModel.loc("Reset Visible Blocks"), systemImage: "arrow.counterclockwise")
+            }
+        }
+    }
+
+    private func blockToggle(_ block: AppDisplayBlock, title: String) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { viewModel.isBlockVisible(block) },
+            set: { viewModel.setBlock(block, visible: $0) }
+        ))
+    }
+
     // MARK: - Budget
 
     private var budgetSection: some View {
@@ -164,24 +255,24 @@ struct SettingsView: View {
                 TextField(viewModel.monthlyIncomeLabel, text: $incomeText)
                     .keyboardType(.decimalPad)
             }
-            .onChange(of: incomeText) { _ in scheduleBudgetSave() }
+            .onChange(of: incomeText) { _, _ in scheduleBudgetSave() }
 
             HStack {
                 Text(viewModel.currency == "JPY" ? "¥" : "$").foregroundStyle(.secondary)
                 TextField(viewModel.essentialsLabel, text: $essentialsText)
                     .keyboardType(.decimalPad)
             }
-            .onChange(of: essentialsText) { _ in scheduleBudgetSave() }
+            .onChange(of: essentialsText) { _, _ in scheduleBudgetSave() }
 
             HStack {
                 Text(viewModel.currency == "JPY" ? "¥" : "$").foregroundStyle(.secondary)
                 TextField(viewModel.savingsGoalLabel, text: $savingsText)
                     .keyboardType(.decimalPad)
             }
-            .onChange(of: savingsText) { _ in scheduleBudgetSave() }
+            .onChange(of: savingsText) { _, _ in scheduleBudgetSave() }
 
             Stepper("\(viewModel.payDayLabel): \(payDayVal)", value: $payDayVal, in: 1...31)
-                .onChange(of: payDayVal) { _ in saveBudgetNow() }
+                .onChange(of: payDayVal) { _, _ in saveBudgetNow() }
         }
         .onAppear {
             if let budget = viewModel.currentBudget {
@@ -191,7 +282,7 @@ struct SettingsView: View {
                 payDayVal = budget.payDay ?? 1
             }
         }
-        .onChange(of: viewModel.currentBudget?.id) { _ in
+        .onChange(of: viewModel.currentBudget?.id) { _, _ in
             if let budget = viewModel.currentBudget {
                 incomeText = String(format: "%.0f", budget.monthlyIncome)
                 essentialsText = budget.monthlyEssentials.map { String(format: "%.0f", $0) } ?? ""
@@ -409,13 +500,13 @@ struct SettingsView: View {
     }
 
     private func saveBudgetNow() {
-        guard let income = Double(incomeText.replacingOccurrences(of: ",", with: "")), income > 0,
+        guard let income = CurrencyFormat.parseInput(incomeText), income > 0,
               viewModel.currentBudget != nil else { return }
         // Only update the budget fields that changed; updateBudgetLocally preserves nil fields
         viewModel.updateBudgetLocally(BudgetData(
             monthlyIncome: income,
-            monthlyEssentials: Double(essentialsText.replacingOccurrences(of: ",", with: "")),
-            monthlySavingsGoal: Double(savingsText.replacingOccurrences(of: ",", with: "")),
+            monthlyEssentials: CurrencyFormat.parseInput(essentialsText),
+            monthlySavingsGoal: CurrencyFormat.parseInput(savingsText),
             payDay: payDayVal
         ))
     }

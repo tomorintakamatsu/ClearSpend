@@ -145,8 +145,11 @@ struct WelcomeView: View {
                                         Text(viewModel.loc(theme.label))
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                            .minimumScaleFactor(0.75)
+                                            .multilineTextAlignment(.center)
                                     }
-                                    .frame(width: 52)
+                                    .frame(width: 60)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -309,7 +312,7 @@ struct WelcomeView: View {
     }
 
     private func saveAndContinue() {
-        guard let income = Double(monthlyIncome), income > 0 else {
+        guard let income = CurrencyFormat.parseInput(monthlyIncome), income > 0 else {
             onboardingError = viewModel.loc("Please enter a valid monthly income")
             return
         }
@@ -317,8 +320,8 @@ struct WelcomeView: View {
         isSaving = true
         let data = BudgetData(
             monthlyIncome: income,
-            monthlyEssentials: Double(monthlyEssentials),
-            monthlySavingsGoal: Double(monthlySavings),
+            monthlyEssentials: CurrencyFormat.parseInput(monthlyEssentials),
+            monthlySavingsGoal: CurrencyFormat.parseInput(monthlySavings),
             payDay: payDay,
             currency: selectedCurrency,
             language: selectedLanguage,
@@ -330,8 +333,8 @@ struct WelcomeView: View {
             let localBudget = Budget(
                 id: UUID().uuidString,
                 monthlyIncome: income,
-                monthlyEssentials: Double(monthlyEssentials),
-                monthlySavingsGoal: Double(monthlySavings),
+                monthlyEssentials: CurrencyFormat.parseInput(monthlyEssentials),
+                monthlySavingsGoal: CurrencyFormat.parseInput(monthlySavings),
                 payDay: payDay,
                 currency: selectedCurrency,
                 language: selectedLanguage,

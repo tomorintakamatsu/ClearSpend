@@ -6,7 +6,8 @@ struct AIFeaturesView: View {
     @State private var selectedTab = 0
     @State private var tabLoading: [Bool] = [false, false, false, false]
     @State private var tabErrors: [String?] = [nil, nil, nil, nil]
-    @State private var generationStartedAt: [Date?] = [nil, nil, nil, nil]
+    @State private var tabProgressPhases: [AppViewModel.AIProgressPhase] = [.collectingData, .collectingData, .collectingData, .collectingData]
+    @State private var showsHistory = false
 
     private var tabResults: [AppViewModel.AIResult?] {
         [viewModel.currentDailyResult, viewModel.currentWeeklyResult, viewModel.currentMonthlyResult, viewModel.currentForecastResult]
@@ -23,10 +24,12 @@ struct AIFeaturesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            aiHeaderCard
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
+            if viewModel.isBlockVisible(.aiIntro) {
+                aiHeaderCard
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                    .padding(.bottom, 12)
+            }
 
             Picker(viewModel.loc("Analysis"), selection: $selectedTab) {
                 ForEach(tabLabels.indices, id: \.self) { i in
@@ -34,6 +37,11 @@ struct AIFeaturesView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .onChange(of: selectedTab) { oldValue, newValue in
+                if oldValue != newValue {
+                    Haptics.selection()
+                }
+            }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
 
@@ -112,44 +120,28 @@ struct AIFeaturesView: View {
     // MARK: - Daily Tab
 
     private var aiHeaderCard: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 44, shape: .circle, isProminent: true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.loc("PennyLet Intelligence"))
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Text(viewModel.loc("Practical reads on your spending rhythm."))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.68))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.loc("PennyLet Intelligence"))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer()
         }
         .padding(18)
-        .background(
-            LinearGradient(
-                colors: viewModel.theme.gradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
-        }
-        .shadow(color: viewModel.theme.primaryColor.opacity(0.20), radius: 18, y: 10)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
     }
 
     private var dailyTab: some View {
         ScrollView {
             VStack(spacing: 16) {
-                usageBadge(feature: "daily")
+                if viewModel.isBlockVisible(.aiUsage) {
+                    usageBadge(feature: "daily")
+                }
 
                 if tabLoading[0] {
                     loadingView(for: 0)
@@ -160,10 +152,9 @@ struct AIFeaturesView: View {
                 } else {
                     emptyView(
                         title: viewModel.dailyAnalysisTitle,
-                        subtitle: viewModel.dailyAnalysisSubtitle,
                         feature: "daily"
                     ) {
-                        await generate(for: 0) { try await viewModel.generateDailyAnalysis() }
+                        await generate(for: 0) { progress in try await viewModel.generateDailyAnalysis(progress: progress) }
                     }
                 }
 
@@ -171,9 +162,13 @@ struct AIFeaturesView: View {
                     errorView(e)
                 }
 
-                historySection(type: "daily")
+                if viewModel.isBlockVisible(.aiHistory) {
+                    historySection(type: "daily")
+                }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 110)
         }
     }
 
@@ -182,7 +177,9 @@ struct AIFeaturesView: View {
     private var weeklyTab: some View {
         ScrollView {
             VStack(spacing: 16) {
-                usageBadge(feature: "recap")
+                if viewModel.isBlockVisible(.aiUsage) {
+                    usageBadge(feature: "recap")
+                }
 
                 if tabLoading[1] {
                     loadingView(for: 1)
@@ -193,10 +190,9 @@ struct AIFeaturesView: View {
                 } else {
                     emptyView(
                         title: viewModel.weeklyRecapTitle,
-                        subtitle: viewModel.weeklyRecapSubtitle,
                         feature: "recap"
                     ) {
-                        await generate(for: 1) { try await viewModel.generateWeeklyAnalysis() }
+                        await generate(for: 1) { progress in try await viewModel.generateWeeklyAnalysis(progress: progress) }
                     }
                 }
 
@@ -204,9 +200,13 @@ struct AIFeaturesView: View {
                     errorView(e)
                 }
 
-                historySection(type: "weekly")
+                if viewModel.isBlockVisible(.aiHistory) {
+                    historySection(type: "weekly")
+                }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 110)
         }
     }
 
@@ -218,7 +218,9 @@ struct AIFeaturesView: View {
                 if viewModel.canUseFeature("insight") == false && !viewModel.isPro {
                     upgradePrompt
                 } else {
-                    usageBadge(feature: "insight")
+                    if viewModel.isBlockVisible(.aiUsage) {
+                        usageBadge(feature: "insight")
+                    }
 
                     if tabLoading[2] {
                         loadingView(for: 2)
@@ -229,10 +231,9 @@ struct AIFeaturesView: View {
                     } else {
                         emptyView(
                             title: viewModel.monthlyInsightTitle,
-                            subtitle: viewModel.monthlyInsightSubtitle,
                             feature: "insight"
                         ) {
-                            await generate(for: 2) { try await viewModel.generateMonthlyAnalysis() }
+                            await generate(for: 2) { progress in try await viewModel.generateMonthlyAnalysis(progress: progress) }
                         }
                     }
 
@@ -240,10 +241,14 @@ struct AIFeaturesView: View {
                         errorView(e)
                     }
 
-                    historySection(type: "monthly")
+                    if viewModel.isBlockVisible(.aiHistory) {
+                        historySection(type: "monthly")
+                    }
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 110)
         }
     }
 
@@ -252,7 +257,9 @@ struct AIFeaturesView: View {
     private var forecastTab: some View {
         ScrollView {
             VStack(spacing: 16) {
-                usageBadge(feature: "forecast")
+                if viewModel.isBlockVisible(.aiUsage) {
+                    usageBadge(feature: "forecast")
+                }
 
                 if tabLoading[3] {
                     loadingView(for: 3)
@@ -262,18 +269,12 @@ struct AIFeaturesView: View {
                     exhaustedView
                 } else {
                     VStack(spacing: 16) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.system(size: 40))
-                            .foregroundStyle(viewModel.theme.primaryColor)
+                        PennyLetIconTile(symbol: "chart.line.uptrend.xyaxis", tint: Color(.systemBlue), size: 58, symbolScale: 0.42, shape: .diamond, isProminent: true)
                         Text(viewModel.loc("Spending Forecast"))
                             .font(.title3.weight(.semibold))
-                        Text(viewModel.loc("See AI-predicted spending for next month based on your history."))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
                         Button {
                             handleGenerate(feature: "forecast") {
-                                await generate(for: 3) { try await viewModel.generateForecast() }
+                                await generate(for: 3) { progress in try await viewModel.generateForecast(progress: progress) }
                             }
                         } label: {
                             Label(viewModel.generateLabel, systemImage: "wand.and.stars")
@@ -281,14 +282,7 @@ struct AIFeaturesView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 24)
                                 .padding(.vertical, 12)
-                                .background(
-                                    LinearGradient(
-                                        colors: [viewModel.theme.primaryColor, viewModel.theme.accentColor],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    in: RoundedRectangle(cornerRadius: 8)
-                                )
+                                .premiumActionFill(tint: viewModel.theme.primaryColor)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -299,9 +293,13 @@ struct AIFeaturesView: View {
                     errorView(e)
                 }
 
-                historySection(type: "forecast")
+                if viewModel.isBlockVisible(.aiHistory) {
+                    historySection(type: "forecast")
+                }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 110)
         }
     }
 
@@ -311,31 +309,36 @@ struct AIFeaturesView: View {
         let remaining = viewModel.remainingUses(feature)
         let limit = viewModel.usageLimit(feature)
         let used = limit - remaining
-        return VStack(spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: remaining > 0 ? "circle.grid.3x3.fill" : "circle.slash")
-                    .font(.system(size: 10))
-                Text(viewModel.isPro
-                    ? "\(used)/\(limit)"
-                    : "\(remaining)/\(limit)")
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(viewModel.loc("Usage"), systemImage: remaining > 0 ? "gauge" : "circle.slash")
+                    .font(.caption.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(viewModel.isPro ? "\(used)/\(limit)" : "\(remaining)/\(limit)")
+                    .font(.caption.monospacedDigit().weight(.semibold))
             }
-            .font(.caption2)
-            .foregroundStyle(remaining > 0 ? Color.secondary : Color.orange)
+
             ProgressView(value: Double(used), total: Double(limit))
                 .tint(remaining > 0 ? viewModel.theme.primaryColor : Color.orange)
-                .scaleEffect(x: 1, y: 0.5)
+                .scaleEffect(x: 1, y: 0.7)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 10)
+        .foregroundStyle(remaining > 0 ? Color.secondary : Color.orange)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder
     private var exhaustedView: some View {
         VStack(spacing: 16) {
-            Image(systemName: viewModel.isPro ? "hourglass" : "crown.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(viewModel.isPro ? .orange : .yellow)
+            PennyLetIconTile(
+                symbol: viewModel.isPro ? "hourglass" : "crown.fill",
+                tint: viewModel.isPro ? Color(.systemOrange) : Color(.systemYellow),
+                size: 58,
+                symbolScale: 0.42,
+                shape: .circle,
+                isProminent: true
+            )
             Text(viewModel.isPro
                 ? viewModel.loc("Monthly Limit Reached")
                 : viewModel.loc("Free Uses Exhausted"))
@@ -363,71 +366,54 @@ struct AIFeaturesView: View {
     }
 
     private func loadingView(for tab: Int) -> some View {
-        let startDate = generationStartedAt.indices.contains(tab) ? generationStartedAt[tab] ?? Date() : Date()
-        let estimate = estimatedGenerationDuration(for: tab)
+        let phase = progressPhase(for: tab)
 
-        return TimelineView(.periodic(from: startDate, by: 0.25)) { timeline in
-            let elapsed = timeline.date.timeIntervalSince(startDate)
-            let progress = estimatedProgress(elapsed: elapsed, estimate: estimate)
-            let remaining = max(0, Int(ceil(estimate - elapsed)))
-            let isTakingLonger = elapsed >= estimate
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 42, shape: .circle, isProminent: true)
 
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(viewModel.theme.primaryColor.opacity(0.14))
-                            .frame(width: 42, height: 42)
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(viewModel.theme.primaryColor)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(progressTitle(for: tab))
-                            .font(.headline)
-                        Text(progressPhase(elapsed: elapsed, estimate: estimate))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Text(progressBadgeText(progress: progress, isTakingLonger: isTakingLonger))
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(progressTitle(for: tab))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(viewModel.theme.primaryColor)
+                    Text(viewModel.loc(progressPhaseTitleKey(for: phase, tab: tab)))
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(viewModel.loc(progressPhaseDetailKey(for: phase)))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .contentTransition(.opacity)
 
-                ProgressView(value: progress, total: 1)
-                    .tint(viewModel.theme.primaryColor)
-                    .scaleEffect(x: 1, y: 1.35, anchor: .center)
-                    .animation(.easeInOut(duration: 0.25), value: progress)
-
-                HStack {
-                    Label(
-                        remainingText(remaining: remaining, elapsed: elapsed, estimate: estimate),
-                        systemImage: isTakingLonger ? "hourglass" : "clock"
-                    )
-                    Spacer()
-                    Text(durationStatusText(elapsed: elapsed, estimate: estimate))
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Spacer()
             }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .premiumPanel(tint: viewModel.theme.primaryColor)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(progressTitle(for: tab)), \(Int((progress * 100).rounded())) percent")
+
+            HStack {
+                Text(progressStepText(for: phase))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(viewModel.theme.primaryColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(viewModel.theme.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+
+                Spacer()
+            }
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumPanel(tint: viewModel.theme.primaryColor)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(progressTitle(for: tab)), \(progressStepText(for: phase))")
+        .accessibilityValue("\(viewModel.loc(progressPhaseTitleKey(for: phase, tab: tab))). \(viewModel.loc(progressPhaseDetailKey(for: phase)))")
     }
 
     private func resultView(_ r: AppViewModel.AIResult, tab: Int) -> some View {
         VStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(viewModel.theme.primaryColor)
+                    PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 28, symbolScale: 0.43, shape: .circle)
                     Text(viewModel.resultLabel)
                         .font(.headline)
                     Spacer()
@@ -466,16 +452,10 @@ struct AIFeaturesView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .foregroundStyle(.white)
-                    .background(
-                        LinearGradient(
-                            colors: [viewModel.theme.primaryColor, viewModel.theme.accentColor],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .premiumActionFill(tint: viewModel.theme.primaryColor)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.loc("Generate Again"))
         }
     }
 
@@ -496,9 +476,7 @@ struct AIFeaturesView: View {
         let grouped = groupSmallCategories(data)
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "chart.pie.fill")
-                    .font(.caption)
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                PennyLetIconTile(symbol: "chart.pie.fill", tint: Color(.systemOrange), size: 26, symbolScale: 0.42, shape: .circle)
                 Text(viewModel.loc("Category Breakdown"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -525,9 +503,7 @@ struct AIFeaturesView: View {
         let topItems = Array(data.sorted(by: { $0.amount > $1.amount }).prefix(8))
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "chart.bar.fill")
-                    .font(.caption)
-                    .foregroundStyle(viewModel.theme.primaryColor)
+                PennyLetIconTile(symbol: "chart.bar.fill", tint: Color(.systemBlue), size: 26, symbolScale: 0.42, shape: .capsule)
                 Text(viewModel.loc("Weekly Trend"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -568,17 +544,11 @@ struct AIFeaturesView: View {
         return result
     }
 
-    private func emptyView(title: String, subtitle: String, feature: String, action: @escaping () async -> Void) -> some View {
+    private func emptyView(title: String, feature: String, action: @escaping () async -> Void) -> some View {
         VStack(spacing: 16) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 40))
-                .foregroundStyle(viewModel.theme.primaryColor)
+            PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(title)
                 .font(.title3.weight(.semibold))
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
 
             Button {
                 handleGenerate(feature: feature, action: action)
@@ -588,14 +558,7 @@ struct AIFeaturesView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(
-                            colors: [viewModel.theme.primaryColor, viewModel.theme.accentColor],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .premiumActionFill(tint: viewModel.theme.primaryColor)
             }
         }
         .frame(maxWidth: .infinity)
@@ -618,50 +581,68 @@ struct AIFeaturesView: View {
     private func historySection(type: String) -> some View {
         let filtered = viewModel.analysisHistory.filter { $0.type == type }
         if !filtered.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(viewModel.historyLabel)
-                    .font(.headline)
-                    .padding(.top, 8)
-
-                ForEach(filtered) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        if let date = item.analysisDate ?? item.createdDate {
-                            Text(formatDate(date))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(viewModel.theme.primaryColor)
-                        }
-                        Text(item.content)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    withAnimation(AnimationPresets.fold) {
+                        showsHistory.toggle()
                     }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedHistoryItem = item }
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            Task { await viewModel.deleteAnalysisHistory(item) }
-                        } label: {
-                            Label(viewModel.deleteLabel, systemImage: "trash")
-                        }
+                } label: {
+                    HStack {
+                        Text(viewModel.historyLabel)
+                            .font(.headline)
+                        Spacer()
+                        Text("\(filtered.count)")
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Image(systemName: showsHistory ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .buttonStyle(.plain)
+
+                if showsHistory {
+                    VStack(spacing: 8) {
+                        ForEach(filtered) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                if let date = item.analysisDate ?? item.createdDate {
+                                    Text(formatDate(date))
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(viewModel.theme.primaryColor)
+                                }
+                                Text(item.content)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedHistoryItem = item }
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    Task { await viewModel.deleteAnalysisHistory(item) }
+                                } label: {
+                                    Label(viewModel.deleteLabel, systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                    .transition(.foldReveal)
+                }
             }
+            .padding(16)
+            .premiumPanel(tint: viewModel.theme.primaryColor)
+            .animation(AnimationPresets.fold, value: showsHistory)
         }
     }
 
     private var upgradePrompt: some View {
         VStack(spacing: 16) {
-            Image(systemName: "crown.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.yellow)
+            PennyLetIconTile(symbol: "crown.fill", tint: Color(.systemYellow), size: 58, symbolScale: 0.42, shape: .diamond, isProminent: true)
             Text(viewModel.monthlyInsightRequiresPro)
                 .font(.title3.weight(.semibold))
-            Text(viewModel.upgradeDescription)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
             Button {
                 showUpgradeOrGuestPrompt()
             } label: {
@@ -697,38 +678,34 @@ struct AIFeaturesView: View {
         switch tab {
         case 0:
             handleGenerate(feature: "daily") {
-                await generate(for: 0) { try await viewModel.generateDailyAnalysis() }
+                await generate(for: 0) { progress in try await viewModel.generateDailyAnalysis(progress: progress) }
             }
         case 1:
             handleGenerate(feature: "recap") {
-                await generate(for: 1) { try await viewModel.generateWeeklyAnalysis() }
+                await generate(for: 1) { progress in try await viewModel.generateWeeklyAnalysis(progress: progress) }
             }
         case 2:
             handleGenerate(feature: "insight") {
-                await generate(for: 2) { try await viewModel.generateMonthlyAnalysis() }
+                await generate(for: 2) { progress in try await viewModel.generateMonthlyAnalysis(progress: progress) }
             }
         case 3:
             handleGenerate(feature: "forecast") {
-                await generate(for: 3) { try await viewModel.generateForecast() }
+                await generate(for: 3) { progress in try await viewModel.generateForecast(progress: progress) }
             }
         default:
             break
         }
     }
 
-    private func generate(for tab: Int, operation: @escaping () async throws -> AppViewModel.AIResult) async {
-        let start = Date()
-        if generationStartedAt.indices.contains(tab) {
-            generationStartedAt[tab] = start
-        }
+    private func generate(
+        for tab: Int,
+        operation: @escaping (@escaping AppViewModel.AIProgressHandler) async throws -> AppViewModel.AIResult
+    ) async {
+        updateProgress(.collectingData, for: tab)
         tabLoading[tab] = true
         tabErrors[tab] = nil
         defer {
             tabLoading[tab] = false
-            if generationStartedAt.indices.contains(tab) {
-                generationStartedAt[tab] = nil
-            }
-            recordGenerationDuration(Date().timeIntervalSince(start), for: tab)
         }
 
         // Clear current before generating new
@@ -740,50 +717,39 @@ struct AIFeaturesView: View {
         default: break
         }
         do {
-            _ = try await operation()
+            _ = try await operation { phase in
+                updateProgress(phase, for: tab)
+            }
         } catch {
-            tabErrors[tab] = error.localizedDescription
+            tabErrors[tab] = aiErrorMessage(error)
         }
     }
 
-    private func estimatedGenerationDuration(for tab: Int) -> TimeInterval {
-        let defaults: [TimeInterval] = [12, 18, 24, 20]
-        let fallback = defaults.indices.contains(tab) ? defaults[tab] : 14
-        let learned = UserDefaults.standard.double(forKey: generationEstimateKey(for: tab))
-        let estimate = learned > 0 ? learned * 1.15 : fallback
-        return min(max(estimate, 8), 75)
-    }
-
-    private func estimatedProgress(elapsed: TimeInterval, estimate: TimeInterval) -> Double {
-        let estimate = max(estimate, 1)
-        if elapsed <= estimate {
-            let ratio = max(0, elapsed / estimate)
-            let eased = 1 - pow(1 - ratio, 1.65)
-            return max(0.06, min(0.96, eased * 0.96))
+    private func aiErrorMessage(_ error: Error) -> String {
+        if let clientError = error as? ClientError {
+            switch clientError {
+            case .requestTimedOut:
+                return viewModel.loc("AI request timed out. Please check your connection and try again.")
+            case .unauthorized, .serverError:
+                return viewModel.loc("AI service is unavailable. Please try again.")
+            default:
+                break
+            }
         }
-
-        let extraRatio = min((elapsed - estimate) / max(estimate, 20), 1)
-        return min(0.995, 0.96 + (0.035 * extraRatio))
+        return error.localizedDescription
     }
 
-    private func recordGenerationDuration(_ duration: TimeInterval, for tab: Int) {
-        guard duration > 1 else { return }
-        let key = generationEstimateKey(for: tab)
-        let previous = UserDefaults.standard.double(forKey: key)
-        let clamped = min(max(duration, 4), 90)
-        let updated = previous > 0 ? (previous * 0.65 + clamped * 0.35) : clamped
-        UserDefaults.standard.set(updated, forKey: key)
-    }
-
-    private func generationEstimateKey(for tab: Int) -> String {
-        "ai_generation_duration_tab_\(tab)"
-    }
-
-    private func progressBadgeText(progress: Double, isTakingLonger: Bool) -> String {
-        if isTakingLonger {
-            return viewModel.loc("Still working")
+    @MainActor
+    private func updateProgress(_ phase: AppViewModel.AIProgressPhase, for tab: Int) {
+        guard tabProgressPhases.indices.contains(tab) else { return }
+        withAnimation(.easeInOut(duration: 0.24)) {
+            tabProgressPhases[tab] = phase
         }
-        return "\(Int((progress * 100).rounded()))%"
+    }
+
+    private func progressPhase(for tab: Int) -> AppViewModel.AIProgressPhase {
+        guard tabProgressPhases.indices.contains(tab) else { return .collectingData }
+        return tabProgressPhases[tab]
     }
 
     private func progressTitle(for tab: Int) -> String {
@@ -796,34 +762,66 @@ struct AIFeaturesView: View {
         }
     }
 
-    private func progressPhase(elapsed: TimeInterval, estimate: TimeInterval) -> String {
-        let ratio = elapsed / max(estimate, 1)
-        switch ratio {
-        case ..<0.22:
-            return viewModel.loc("Reading your spending data")
-        case ..<0.55:
-            return viewModel.loc("Finding patterns and outliers")
-        case ..<0.86:
-            return viewModel.loc("Writing tailored advice")
-        case ..<1:
-            return viewModel.loc("Finalizing your result")
-        default:
-            return viewModel.loc("AI is checking the details")
+    private func progressStepText(for phase: AppViewModel.AIProgressPhase) -> String {
+        viewModel.loc(phase.messageKey)
+    }
+
+    private func progressPhaseTitleKey(for phase: AppViewModel.AIProgressPhase, tab: Int) -> String {
+        switch phase {
+        case .collectingData:
+            switch tab {
+            case 0: return "Gathering today's transactions"
+            case 1: return "Gathering this week's activity"
+            case 2: return "Gathering this month's activity"
+            case 3: return "Gathering forecast inputs"
+            default: return "Reading local spending data"
+            }
+        case .requestPrepared:
+            switch tab {
+            case 0: return "Preparing the daily prompt"
+            case 1: return "Preparing the weekly prompt"
+            case 2: return "Preparing the monthly prompt"
+            case 3: return "Preparing the forecast prompt"
+            default: return "Preparing AI request"
+            }
+        case .waitingForAI:
+            return "Waiting for AI response"
+        case .responseReceived:
+            switch tab {
+            case 0: return "Checking the daily result"
+            case 1: return "Checking the weekly result"
+            case 2: return "Checking the monthly result"
+            case 3: return "Checking the forecast result"
+            default: return "AI response received"
+            }
+        case .savingResult:
+            switch tab {
+            case 0: return "Saving your daily insight"
+            case 1: return "Saving your weekly recap"
+            case 2: return "Saving your monthly insight"
+            case 3: return "Saving your forecast"
+            default: return "Saving result locally"
+            }
+        case .finished:
+            return "Result ready"
         }
     }
 
-    private func remainingText(remaining: Int, elapsed: TimeInterval, estimate: TimeInterval) -> String {
-        if elapsed >= estimate {
-            return viewModel.loc("Taking longer than usual")
+    private func progressPhaseDetailKey(for phase: AppViewModel.AIProgressPhase) -> String {
+        switch phase {
+        case .collectingData:
+            return "Reviewing local transactions, budgets, goals, categories, and recent activity."
+        case .requestPrepared:
+            return "Turning the relevant spending evidence into a focused AI request."
+        case .waitingForAI:
+            return "Waiting for the AI to return a structured answer. Forecasts can take a little longer."
+        case .responseReceived:
+            return "Checking the returned text, numbers, and chart data before showing it."
+        case .savingResult:
+            return "Saving the result on this device so it appears in history."
+        case .finished:
+            return "Your analysis is ready to read."
         }
-        return "\(viewModel.loc("About")) \(remaining)s \(viewModel.loc("left"))"
-    }
-
-    private func durationStatusText(elapsed: TimeInterval, estimate: TimeInterval) -> String {
-        if elapsed >= estimate {
-            return viewModel.loc("Larger histories can take longer")
-        }
-        return "\(viewModel.loc("Usually")) \(Int(estimate))s"
     }
 
     private var dateLocale: Locale {
