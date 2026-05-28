@@ -16,6 +16,20 @@ struct WallpaperCropResult {
     let verticalFrame: Double
 }
 
+private enum SettingsChunk: String, Hashable {
+    case visibleBlocks
+    case wallpaper
+    case appearance
+    case pro
+    case budget
+    case preferences
+    case analysis
+    case data
+    case account
+    case developer
+    case legal
+}
+
 struct SettingsView: View {
     @Environment(AppViewModel.self) private var viewModel
     @State private var exportItem: ExportShareItem?
@@ -36,6 +50,9 @@ struct SettingsView: View {
     @State private var wallpaperError: String?
     @State private var pendingWallpaperCrop: WallpaperCropSource?
     @State private var profileSaveMessage: String?
+    @State private var showProfileNamePrompt = false
+    @State private var profileNameText = ""
+    @State private var expandedChunks: Set<SettingsChunk> = [.visibleBlocks, .wallpaper]
 
     // Editable budget fields
     @State private var incomeText: String = ""
@@ -55,11 +72,12 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            visibleBlocksSection
+            wallpaperSection
+            appearanceSection
             if !viewModel.isPro {
                 proSection
             }
-            appearanceSection
-            visibleBlocksSection
             budgetSection
             preferencesSection
             analysisSection
@@ -113,6 +131,15 @@ struct SettingsView: View {
         } message: {
             Text(viewModel.developerUnlockMessage)
         }
+        .alert(viewModel.loc("Name Profile"), isPresented: $showProfileNamePrompt) {
+            TextField(viewModel.loc("Profile name"), text: $profileNameText)
+            Button(viewModel.loc("Save")) {
+                saveNamedWallpaperProfile()
+            }
+            Button(viewModel.cancelLabel, role: .cancel) {}
+        } message: {
+            Text(viewModel.loc("Save the current wallpaper, crop, and appearance settings as a profile."))
+        }
         .sheet(isPresented: $showUpgrade) {
             UpgradeView()
         }
@@ -124,7 +151,7 @@ struct SettingsView: View {
     }
 
     private var proSection: some View {
-        Section {
+        settingsSection(viewModel.loc("PennyLet Pro"), chunk: .pro) {
             Button {
                 showUpgrade = true
             } label: {
@@ -155,48 +182,111 @@ struct SettingsView: View {
         }
     }
 
+    private func settingsSection<Content: View>(
+        _ title: String,
+        chunk: SettingsChunk,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        Section {
+            DisclosureGroup(isExpanded: Binding(
+                get: { expandedChunks.contains(chunk) },
+                set: { isExpanded in
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                        if isExpanded {
+                            expandedChunks.insert(chunk)
+                        } else {
+                            expandedChunks.remove(chunk)
+                        }
+                    }
+                    Haptics.selection()
+                }
+            )) {
+                content()
+                    .padding(.top, 6)
+            } label: {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+        }
+    }
+
     // MARK: - Appearance
 
     private var appearanceSection: some View {
-        Section(viewModel.appearanceSection) {
+        settingsSection(viewModel.appearanceSection, chunk: .appearance) {
             themePicker
-            wallpaperThemePicker
             colorModePicker
             fontPicker
             weekStartPicker
         }
     }
 
+    private var wallpaperSection: some View {
+        settingsSection(viewModel.loc("Wallpaper Theme"), chunk: .wallpaper) {
+            wallpaperThemePicker
+        }
+    }
+
     private var themePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Text(viewModel.themeLabel)
-                Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            Text(viewModel.loc("Preset themes"))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
                 ForEach(AppTheme.allCases, id: \.self) { theme in
                     Button {
-                        viewModel.theme = theme
+                        Haptics.selection()
+                        viewModel.selectTheme(theme)
                         savePreferences()
                     } label: {
-                        Circle()
-                            .fill(theme.primaryColor)
-                            .frame(width: 28, height: 28)
-                            .overlay(
+                        VStack(spacing: 7) {
+                            ZStack {
                                 Circle()
-                                    .strokeBorder(.primary, lineWidth: viewModel.theme == theme ? 3 : 0)
-                            )
+                                    .fill(theme.primaryColor)
+                                    .frame(width: 34, height: 34)
+                                Circle()
+                                    .fill(theme.accentColor)
+                                    .frame(width: 14, height: 14)
+                                    .offset(x: 11, y: 11)
+                            }
+                            Text(viewModel.loc(theme.label))
+                                .font(.caption2.weight(.semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 68)
+                        .padding(.vertical, 7)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(!viewModel.isUsingCustomThemeColor && viewModel.theme == theme ? viewModel.primaryColor : Color(.separator).opacity(0.12), lineWidth: !viewModel.isUsingCustomThemeColor && viewModel.theme == theme ? 2 : 1)
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
 
-            if viewModel.hasWallpaperTheme {
-                Text(viewModel.loc("Wallpaper theme is active. Remove it to use manual colors."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            ColorPicker(
+                selection: Binding(
+                    get: { viewModel.customThemeColor },
+                    set: {
+                        viewModel.setCustomThemeColor($0)
+                        savePreferences()
+                    }
+                ),
+                supportsOpacity: false
+            ) {
+                HStack(spacing: 10) {
+                    Image(systemName: "eyedropper.halffull")
+                        .foregroundStyle(viewModel.primaryColor)
+                    Text(viewModel.loc("Custom color"))
+                        .font(.subheadline.weight(.semibold))
+                }
             }
+            .padding(.vertical, 4)
         }
-        .opacity(viewModel.hasWallpaperTheme ? 0.46 : 1)
-        .disabled(viewModel.hasWallpaperTheme)
     }
 
     private var colorModePicker: some View {
@@ -247,9 +337,9 @@ struct SettingsView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         HStack(spacing: 8) {
-                            paletteDot(viewModel.primaryColor)
-                            paletteDot(viewModel.accentColor)
-                            paletteDot(viewModel.backgroundColor)
+                            paletteDot(viewModel.wallpaperPalette?.primaryColor ?? viewModel.primaryColor)
+                            paletteDot(viewModel.wallpaperPalette?.accentColor ?? viewModel.accentColor)
+                            paletteDot(viewModel.wallpaperPalette?.backgroundColor ?? viewModel.backgroundColor)
                         }
                     }
 
@@ -284,11 +374,8 @@ struct SettingsView: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        Haptics.success()
-                        viewModel.saveCurrentWallpaperProfile()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                            profileSaveMessage = viewModel.loc("Profile saved")
-                        }
+                        profileNameText = viewModel.activeWallpaperProfile?.name ?? viewModel.loc("Wallpaper")
+                        showProfileNamePrompt = true
                     } label: {
                         Label(viewModel.loc("Save Profile"), systemImage: "checkmark.circle.fill")
                             .font(.caption.weight(.semibold))
@@ -319,14 +406,14 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            HStack(spacing: 10) {
+            VStack(spacing: 10) {
                 PhotosPicker(selection: $selectedWallpaper, matching: .images) {
-                    Label(pickerTitle, systemImage: "plus")
-                        .font(.caption.weight(.semibold))
+                    Label(pickerTitle, systemImage: "photo.badge.plus")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(pickerTint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(pickerTint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .disabled(isAnalyzingWallpaper)
 
@@ -335,9 +422,18 @@ struct SettingsView: View {
                         Haptics.selection()
                         viewModel.clearWallpaperTheme()
                     } label: {
-                        Text(viewModel.loc("Remove Wallpaper Theme"))
-                            .font(.caption.weight(.semibold))
+                        Label(viewModel.loc("Remove Wallpaper Theme"), systemImage: "trash")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(.systemRed))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemRed).opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color(.systemRed).opacity(0.18), lineWidth: 1)
+                            }
                     }
+                    .buttonStyle(.plain)
                     .disabled(isAnalyzingWallpaper)
                 }
             }
@@ -370,14 +466,13 @@ struct SettingsView: View {
                     ForEach(viewModel.wallpaperProfiles) { profile in
                         Button {
                             Haptics.selection()
-                            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                viewModel.selectWallpaperProfile(profile)
-                                profileSaveMessage = nil
-                            }
+                            viewModel.selectWallpaperProfile(profile)
+                            profileSaveMessage = nil
                         } label: {
                             wallpaperProfileCard(profile)
                         }
                         .buttonStyle(.plain)
+                        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                 }
                 .padding(.vertical, 2)
@@ -399,25 +494,26 @@ struct SettingsView: View {
                     blurRadius: min(profile.blurRadius, 8),
                     visibility: 1
                 )
-                .frame(width: 58, height: 118)
+                .frame(width: 76, height: 148)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             } else {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color(.tertiarySystemGroupedBackground))
-                    .frame(width: 58, height: 118)
+                    .frame(width: 76, height: 148)
             }
 
             Text(profile.name)
                 .font(.caption2.weight(.semibold))
                 .lineLimit(1)
-                .frame(width: 70, alignment: .leading)
+                .frame(width: 86, alignment: .leading)
         }
-        .padding(7)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(9)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(isSelected ? viewModel.primaryColor : Color(.separator).opacity(0.14), lineWidth: isSelected ? 2 : 1)
         }
+        .scaleEffect(isSelected ? 1 : 0.98)
     }
 
     private func wallpaperFramePreview(_ image: UIImage) -> some View {
@@ -480,7 +576,13 @@ struct SettingsView: View {
     ) -> some View {
         let clampedValue = Binding<Double>(
             get: { min(max(value.wrappedValue, 0), 100) },
-            set: { value.wrappedValue = min(max($0, 0), 100) }
+            set: { newValue in
+                var transaction = SwiftUI.Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    value.wrappedValue = min(max(newValue, 0), 100)
+                }
+            }
         )
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -501,7 +603,13 @@ struct SettingsView: View {
                 }
             }
             .tint(viewModel.primaryColor)
+            .frame(height: 34)
+            .contentShape(Rectangle())
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
+        .padding(.vertical, 3)
     }
 
     private var fontPicker: some View {
@@ -528,7 +636,7 @@ struct SettingsView: View {
     // MARK: - Visible Blocks
 
     private var visibleBlocksSection: some View {
-        Section(viewModel.loc("Visible Blocks")) {
+        settingsSection(viewModel.loc("Visible Blocks"), chunk: .visibleBlocks) {
             DisclosureGroup(viewModel.homeTab) {
                 blockToggle(.homeSafeToSpend, title: viewModel.loc("Safe to Spend Today"))
                 blockToggle(.homeMonthlyPulse, title: viewModel.loc("Monthly pulse"))
@@ -579,7 +687,7 @@ struct SettingsView: View {
     // MARK: - Budget
 
     private var budgetSection: some View {
-        Section(viewModel.budgetSection) {
+        settingsSection(viewModel.budgetSection, chunk: .budget) {
             HStack {
                 Text(viewModel.currency == "JPY" ? "¥" : "$").foregroundStyle(.secondary)
                 TextField(viewModel.monthlyIncomeLabel, text: $incomeText)
@@ -625,7 +733,7 @@ struct SettingsView: View {
     // MARK: - Preferences
 
     private var preferencesSection: some View {
-        Section(viewModel.preferencesSection) {
+        settingsSection(viewModel.preferencesSection, chunk: .preferences) {
             Picker(viewModel.currencyLabel, selection: Binding(
                 get: { viewModel.currency },
                 set: { viewModel.currency = $0; savePreferences() }
@@ -652,12 +760,33 @@ struct SettingsView: View {
     @ViewBuilder
     private var analysisSection: some View {
         if viewModel.isPro {
-            Section {
-                Toggle(viewModel.autoAnalysisLabel, isOn: Binding(
-                    get: { viewModel.currentBudget?.autoAnalysisEnabled ?? false },
-                    set: { savePreference("auto_analysis_enabled", $0) }
-                ))
-                if viewModel.currentBudget?.autoAnalysisEnabled == true {
+            analysisSettingsSection
+                .alert(viewModel.loc("Auto Analysis Help"), isPresented: $showAutoAnalysisHelp) {
+                    Button(viewModel.loc("OK"), role: .cancel) {}
+                } message: {
+                    Text(viewModel.loc("Auto Analysis automatically generates daily, weekly, and monthly AI spending insights at your scheduled times. Enable it and set your preferred times below."))
+                }
+        }
+    }
+
+    private var analysisSettingsSection: some View {
+        settingsSection(viewModel.analysisSectionLabel, chunk: .analysis) {
+            HStack {
+                Text(viewModel.autoAnalysisLabel)
+                Spacer()
+                Button {
+                    showAutoAnalysisHelp = true
+                } label: {
+                    Image(systemName: "questionmark.circle.fill")
+                        .foregroundStyle(viewModel.primaryColor)
+                }
+                .buttonStyle(.plain)
+            }
+            Toggle(viewModel.autoAnalysisLabel, isOn: Binding(
+                get: { viewModel.currentBudget?.autoAnalysisEnabled ?? false },
+                set: { savePreference("auto_analysis_enabled", $0) }
+            ))
+            if viewModel.currentBudget?.autoAnalysisEnabled == true {
                 HStack {
                     Text(viewModel.dailyTabLabel).foregroundStyle(.secondary)
                     Spacer()
@@ -689,30 +818,13 @@ struct SettingsView: View {
                     }
                 }
             }
-        } header: {
-            HStack {
-                Text(viewModel.analysisSectionLabel)
-                Spacer()
-                Button {
-                    showAutoAnalysisHelp = true
-                } label: {
-                    Image(systemName: "questionmark.circle.fill")
-                        .foregroundStyle(viewModel.primaryColor)
-                }
-            }
         }
-        .alert(viewModel.loc("Auto Analysis Help"), isPresented: $showAutoAnalysisHelp) {
-            Button(viewModel.loc("OK"), role: .cancel) {}
-        } message: {
-            Text(viewModel.loc("Auto Analysis automatically generates daily, weekly, and monthly AI spending insights at your scheduled times. Enable it and set your preferred times below."))
-        }
-    }
     }
 
     // MARK: - Data
 
     private var dataSection: some View {
-        Section(viewModel.dataSectionLabel) {
+        settingsSection(viewModel.dataSectionLabel, chunk: .data) {
             Button {
                 pendingResetAfterExport = false
                 showFileNamePrompt = true
@@ -754,7 +866,7 @@ struct SettingsView: View {
     // MARK: - Account
 
     private var accountSection: some View {
-        Section(viewModel.accountSectionLabel) {
+        settingsSection(viewModel.accountSectionLabel, chunk: .account) {
             Button {
                 registerDeveloperTap()
             } label: {
@@ -776,7 +888,7 @@ struct SettingsView: View {
     }
 
     private var developerSection: some View {
-        Section(viewModel.developerToolsLabel) {
+        settingsSection(viewModel.developerToolsLabel, chunk: .developer) {
             Toggle(isOn: Binding(
                 get: { viewModel.isDeveloperMode },
                 set: { viewModel.setDeveloperMode($0) }
@@ -791,7 +903,7 @@ struct SettingsView: View {
     }
 
     private var legalSection: some View {
-        Section {
+        settingsSection(viewModel.loc("Legal"), chunk: .legal) {
             Link(destination: URL(string: "https://tomorintakamatsu.github.io/pennylet-privacy/privacy-policy.pdf")!) {
                 Label(viewModel.loc("Privacy Policy"), systemImage: "hand.raised.fill")
             }
@@ -821,6 +933,16 @@ struct SettingsView: View {
         }
     }
 
+    private func saveNamedWallpaperProfile() {
+        let fallback = viewModel.activeWallpaperProfile?.name ?? viewModel.loc("Wallpaper")
+        let name = profileNameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : profileNameText
+        viewModel.saveCurrentWallpaperProfile(named: name)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            profileSaveMessage = viewModel.loc("Profile saved")
+        }
+        Haptics.success()
+    }
+
     private func scheduleBudgetSave() {
         budgetSaveTimer?.cancel()
         budgetSaveTimer = Task {
@@ -842,6 +964,7 @@ struct SettingsView: View {
     }
 
     private func savePreferences() {
+        viewModel.savePreferencesToDisk()
         guard let budget = viewModel.currentBudget else { return }
         let data = BudgetData(
             monthlyIncome: budget.monthlyIncome,
@@ -855,7 +978,6 @@ struct SettingsView: View {
             font: viewModel.font.rawValue
         )
         viewModel.updateBudgetLocally(data)
-        viewModel.savePreferencesToDisk()
     }
 
     private func importWallpaper(_ item: PhotosPickerItem) async {
@@ -989,7 +1111,6 @@ struct SettingsView: View {
         viewModel.saveLocalData()
         importResult = count > 0 ? (true, count) : (false, 0)
     }
-
 }
 
 private struct WallpaperImageSurface: View {
@@ -1020,13 +1141,13 @@ private struct WallpaperImageSurface: View {
     }
 
     private var zoomScale: CGFloat {
-        1.04 + CGFloat(clamped(zoomPercent) / 100 * 0.96)
+        1 + CGFloat(clamped(zoomPercent) / 100 * 1.6)
     }
 
     private func frameOffset(in size: CGSize) -> CGSize {
         let horizontal = (clamped(horizontalFrame) - 50) / 50
         let vertical = (clamped(verticalFrame) - 50) / 50
-        let travel = 0.02 + (clamped(zoomPercent) / 100 * 0.32)
+        let travel = 0.08 + (clamped(zoomPercent) / 100 * 0.58)
         return CGSize(width: size.width * travel * horizontal, height: size.height * travel * vertical)
     }
 
@@ -1042,7 +1163,7 @@ private struct WallpaperCropEditor: View {
     let source: WallpaperCropSource
     let onSave: (WallpaperCropResult) -> Void
 
-    @State private var zoomPercent: Double = 16
+    @State private var zoomPercent: Double = 24
     @State private var horizontalFrame: Double = 50
     @State private var verticalFrame: Double = 50
     @State private var dragStartHorizontal: Double?
@@ -1165,9 +1286,10 @@ private struct WallpaperCropEditor: View {
                     dragStartHorizontal = horizontalFrame
                     dragStartVertical = verticalFrame
                 }
-                let travel = max(1, 0.02 + (zoomPercent / 100 * 0.32))
-                horizontalFrame = clamped((dragStartHorizontal ?? 50) + Double(value.translation.width / size.width) / travel * 50)
-                verticalFrame = clamped((dragStartVertical ?? 50) + Double(value.translation.height / size.height) / travel * 50)
+                let horizontalDelta = Double(value.translation.width / max(size.width, 1)) * 120
+                let verticalDelta = Double(value.translation.height / max(size.height, 1)) * 120
+                horizontalFrame = clamped((dragStartHorizontal ?? 50) + horizontalDelta)
+                verticalFrame = clamped((dragStartVertical ?? 50) + verticalDelta)
             }
             .onEnded { _ in
                 dragStartHorizontal = nil
@@ -1180,8 +1302,8 @@ private struct WallpaperCropEditor: View {
                         zoomStartPercent = zoomPercent
                     }
                     let startScale = zoomScale(for: zoomStartPercent ?? zoomPercent)
-                    let newScale = min(max(startScale * value, 1.04), 2.0)
-                    zoomPercent = clamped((Double(newScale) - 1.04) / 0.96 * 100)
+                    let newScale = min(max(startScale * value, 1.0), 2.6)
+                    zoomPercent = clamped((Double(newScale) - 1.0) / 1.6 * 100)
                 }
                 .onEnded { _ in
                     zoomStartPercent = nil
@@ -1191,7 +1313,7 @@ private struct WallpaperCropEditor: View {
     }
 
     private func zoomScale(for percent: Double) -> CGFloat {
-        1.04 + CGFloat(clamped(percent) / 100 * 0.96)
+        1 + CGFloat(clamped(percent) / 100 * 1.6)
     }
 
     private func clamped(_ value: Double) -> Double {

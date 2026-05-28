@@ -94,6 +94,8 @@ enum LocalizationStrings {
         "Please enter a valid monthly income": "有効な月収を入力してください",
         "Preferences": "設定",
         "Appearance": "デザイン",
+        "Preset themes": "プリセットテーマ",
+        "Custom color": "カスタムカラー",
         "Visible Blocks": "表示するブロック",
         "Reset Visible Blocks": "表示ブロックをリセット",
         "Color Mode": "カラーモード",
@@ -108,6 +110,9 @@ enum LocalizationStrings {
         "Wallpaper colors active": "壁紙カラーが有効です",
         "Saved Wallpaper Profiles": "保存済みの壁紙プロファイル",
         "Save Profile": "プロファイルを保存",
+        "Name Profile": "プロファイル名",
+        "Profile name": "プロファイル名",
+        "Save the current wallpaper, crop, and appearance settings as a profile.": "現在の壁紙、切り抜き、表示設定をプロファイルとして保存します。",
         "Profile saved": "プロファイルを保存しました",
         "Crop Wallpaper": "壁紙をトリミング",
         "Use Crop": "この切り抜きを使用",
@@ -130,6 +135,7 @@ enum LocalizationStrings {
         "Savings Goal": "貯金目標",
         "Monthly target": "月間目標",
         "Pay Day": "給料日",
+        "Legal": "法的情報",
 
         // Dashboard
         "Hello, ": "こんにちは、",
@@ -551,6 +557,8 @@ enum LocalizationStrings {
         "Please enter a valid monthly income": "请输入有效的月收入",
         "Preferences": "偏好设置",
         "Appearance": "外观",
+        "Preset themes": "预设主题",
+        "Custom color": "自定义颜色",
         "Visible Blocks": "显示模块",
         "Reset Visible Blocks": "重置显示模块",
         "Color Mode": "颜色模式",
@@ -565,6 +573,9 @@ enum LocalizationStrings {
         "Wallpaper colors active": "壁纸配色已启用",
         "Saved Wallpaper Profiles": "已保存的壁纸配置",
         "Save Profile": "保存配置",
+        "Name Profile": "配置名称",
+        "Profile name": "配置名称",
+        "Save the current wallpaper, crop, and appearance settings as a profile.": "将当前壁纸、裁剪和外观设置保存为配置。",
         "Profile saved": "配置已保存",
         "Crop Wallpaper": "裁剪壁纸",
         "Use Crop": "使用裁剪",
@@ -587,6 +598,7 @@ enum LocalizationStrings {
         "Savings Goal": "储蓄目标",
         "Monthly target": "月度目标",
         "Pay Day": "发薪日",
+        "Legal": "法律信息",
 
         // Dashboard
         "Hello, ": "你好，",

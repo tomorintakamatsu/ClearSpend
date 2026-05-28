@@ -54,6 +54,8 @@ final class AppViewModel {
     private let wallpaperProfilesKey = "wallpaper_profiles"
     private let activeWallpaperProfileIDKey = "active_wallpaper_profile_id"
     private let wallpaperProfilesFolderName = "WallpaperProfiles"
+    private let customThemeColorHexKey = "custom_theme_color_hex"
+    private let customThemeColorEnabledKey = "custom_theme_color_enabled"
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -61,6 +63,8 @@ final class AppViewModel {
         prefs.set(font.rawValue, forKey: "app_font")
         prefs.set(language, forKey: "app_language")
         prefs.set(currency, forKey: "app_currency")
+        prefs.set(isUsingCustomThemeColor, forKey: customThemeColorEnabledKey)
+        prefs.set(hexString(from: customThemeColor), forKey: customThemeColorHexKey)
         saveDisplayBlockPreferences()
     }
 
@@ -70,6 +74,8 @@ final class AppViewModel {
         if let f = prefs.string(forKey: "app_font"), let fn = AppFont(rawValue: f) { font = fn }
         if let l = prefs.string(forKey: "app_language") { language = l }
         if let cr = prefs.string(forKey: "app_currency") { currency = cr }
+        if let hex = prefs.string(forKey: customThemeColorHexKey) { customThemeColor = Color(hex: hex) }
+        isUsingCustomThemeColor = prefs.bool(forKey: customThemeColorEnabledKey)
         loadWallpaperProfiles()
         loadWallpaperAppearance()
         loadWallpaperTheme()
@@ -165,6 +171,8 @@ final class AppViewModel {
     var wallpaperProfileImages: [String: UIImage] = [:]
     var colorMode: AppColorMode = .system
     var font: AppFont = .inter
+    var customThemeColor: Color = Color(hex: "0d9488")
+    var isUsingCustomThemeColor = false
     var currency: String = "USD"
     var language: String = "en" {
         didSet { CurrencyFormat.language = language }
@@ -172,11 +180,11 @@ final class AppViewModel {
     private(set) var hiddenDisplayBlocks: Set<AppDisplayBlock> = []
 
     var primaryColor: Color {
-        wallpaperPalette?.primaryColor ?? theme.primaryColor
+        isUsingCustomThemeColor ? customThemeColor : theme.primaryColor
     }
 
     var accentColor: Color {
-        wallpaperPalette?.accentColor ?? theme.accentColor
+        isUsingCustomThemeColor ? customThemeColor.opacity(0.62) : theme.accentColor
     }
 
     var backgroundColor: Color {
@@ -196,6 +204,16 @@ final class AppViewModel {
         return wallpaperProfiles.first(where: { $0.id == activeWallpaperProfileID })
     }
 
+    func selectTheme(_ appTheme: AppTheme) {
+        theme = appTheme
+        isUsingCustomThemeColor = false
+    }
+
+    func setCustomThemeColor(_ color: Color) {
+        customThemeColor = color
+        isUsingCustomThemeColor = true
+    }
+
     var wallpaperVisibilityOpacity: Double {
         clampedPercent(wallpaperVisibility) / 100
     }
@@ -205,7 +223,7 @@ final class AppViewModel {
     }
 
     var wallpaperZoomScale: CGFloat {
-        1.04 + CGFloat(clampedPercent(wallpaperZoomPercent) / 100 * 0.96)
+        1 + CGFloat(clampedPercent(wallpaperZoomPercent) / 100 * 1.6)
     }
 
     var wallpaperBlurValue: CGFloat {
@@ -215,7 +233,7 @@ final class AppViewModel {
     func wallpaperFrameOffset(in size: CGSize) -> CGSize {
         let horizontal = (clampedPercent(wallpaperHorizontalFrame) - 50) / 50
         let vertical = (clampedPercent(wallpaperVerticalFrame) - 50) / 50
-        let travel = 0.02 + (clampedPercent(wallpaperZoomPercent) / 100 * 0.32)
+        let travel = 0.08 + (clampedPercent(wallpaperZoomPercent) / 100 * 0.58)
         return CGSize(width: size.width * travel * horizontal, height: size.height * travel * vertical)
     }
 
@@ -352,6 +370,8 @@ final class AppViewModel {
         currentMonthlyResult = nil
         currentForecastResult = nil
         theme = .sage
+        isUsingCustomThemeColor = false
+        customThemeColor = Color(hex: "0d9488")
         colorMode = .system
         font = .inter
         currency = "USD"
@@ -407,13 +427,17 @@ final class AppViewModel {
         applyWallpaperProfile(profile, imageData: imageData)
     }
 
-    func saveCurrentWallpaperProfile() {
+    func saveCurrentWallpaperProfile(named name: String? = nil) {
         guard let activeWallpaperProfileID,
               let index = wallpaperProfiles.firstIndex(where: { $0.id == activeWallpaperProfileID }) else {
             saveWallpaperAppearance()
             return
         }
 
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedName.isEmpty {
+            wallpaperProfiles[index].name = trimmedName
+        }
         wallpaperProfiles[index].visibility = clampedPercent(wallpaperVisibility)
         wallpaperProfiles[index].blurRadius = clampedPercent(wallpaperBlurRadius)
         wallpaperProfiles[index].panelOpacity = clampedPercent(wallpaperPanelOpacity)
@@ -435,8 +459,8 @@ final class AppViewModel {
         wallpaperZoomPercent = clampedPercent(profile.zoomPercent)
         wallpaperHorizontalFrame = clampedPercent(profile.horizontalFrame)
         wallpaperVerticalFrame = clampedPercent(profile.verticalFrame)
-        saveWallpaperTheme()
-        saveWallpaperAppearance()
+        saveWallpaperPalette()
+        persistWallpaperAppearance(updateActiveProfile: false)
         prefs.set(profile.id, forKey: activeWallpaperProfileIDKey)
         prefs.synchronize()
     }
@@ -485,13 +509,19 @@ final class AppViewModel {
     }
 
     func saveWallpaperAppearance() {
+        persistWallpaperAppearance(updateActiveProfile: true)
+    }
+
+    private func persistWallpaperAppearance(updateActiveProfile: Bool) {
         prefs.set(wallpaperVisibility, forKey: wallpaperVisibilityKey)
         prefs.set(wallpaperBlurRadius, forKey: wallpaperBlurRadiusKey)
         prefs.set(wallpaperPanelOpacity, forKey: wallpaperPanelOpacityKey)
         prefs.set(wallpaperZoomPercent, forKey: wallpaperZoomPercentKey)
         prefs.set(wallpaperHorizontalFrame, forKey: wallpaperHorizontalFrameKey)
         prefs.set(wallpaperVerticalFrame, forKey: wallpaperVerticalFrameKey)
-        updateActiveWallpaperProfileSettings()
+        if updateActiveProfile {
+            updateActiveWallpaperProfileSettings()
+        }
         prefs.synchronize()
     }
 
@@ -538,6 +568,28 @@ final class AppViewModel {
 
     private func clampedPercent(_ value: Double) -> Double {
         min(max(value, 0), 100)
+    }
+
+    private func hexString(from color: Color) -> String {
+        let uiColor = UIColor(color)
+        guard let converted = uiColor.cgColor.converted(
+            to: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            intent: .defaultIntent,
+            options: nil
+        ),
+              let components = converted.components else {
+            return "0d9488"
+        }
+
+        let red = components.indices.contains(0) ? components[0] : 0
+        let green = components.indices.contains(1) ? components[1] : red
+        let blue = components.indices.contains(2) ? components[2] : red
+        return String(
+            format: "%02x%02x%02x",
+            Int((red * 255).rounded()),
+            Int((green * 255).rounded()),
+            Int((blue * 255).rounded())
+        )
     }
 
     private func loadWallpaperProfiles() {
@@ -612,14 +664,18 @@ final class AppViewModel {
     }
 
     private func saveWallpaperTheme() {
-        if let palette = wallpaperPalette,
-           let paletteData = try? JSONEncoder().encode(palette) {
-            prefs.set(paletteData, forKey: wallpaperPaletteKey)
-        }
+        saveWallpaperPalette()
 
         guard let wallpaperImageData,
               let url = wallpaperFileURL() else { return }
         try? wallpaperImageData.write(to: url, options: [.atomic])
+    }
+
+    private func saveWallpaperPalette() {
+        if let palette = wallpaperPalette,
+           let paletteData = try? JSONEncoder().encode(palette) {
+            prefs.set(paletteData, forKey: wallpaperPaletteKey)
+        }
     }
 
     private func wallpaperProfileFileURL(fileName: String) -> URL? {
