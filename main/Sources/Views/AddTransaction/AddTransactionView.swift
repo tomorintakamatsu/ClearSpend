@@ -41,9 +41,15 @@ struct AddTransactionView: View {
 
     private var categoryList: [AppCategory] {
         var list = type == .income ? AppCategory.incomeCategories : AppCategory.expenseCategories
-        if viewModel.isPro, let customs = viewModel.currentBudget?.customCategories {
-            for (i, name) in customs.enumerated() {
-                list.append(AppCategory(id: "custom_\(i)", label: name, icon: "tag.fill", color: .teal))
+        if let customs = viewModel.currentBudget?.customCategories {
+            for name in customs {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                let normalized = AppCategory.customCategoryID(for: trimmed)
+                guard !list.contains(where: { $0.id == normalized || $0.id == trimmed || $0.label.localizedCaseInsensitiveCompare(trimmed) == .orderedSame }) else {
+                    continue
+                }
+                list.append(AppCategory(id: trimmed, label: trimmed, icon: "tag.fill", color: .teal))
             }
         }
         return list
@@ -63,6 +69,7 @@ struct AddTransactionView: View {
                 VStack(spacing: 18) {
                     typeToggle
                     amountField
+                    quickAmountChips
                     currencySelector
                     conversionPreview
                     quickActions
@@ -73,7 +80,6 @@ struct AddTransactionView: View {
                     }
                     noteAndDate
                     Spacer(minLength: 20)
-                    saveButton
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 14)
@@ -86,7 +92,29 @@ struct AddTransactionView: View {
             .environment(\.locale, datePickerLocale)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(viewModel.cancelLabel) { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        toolbarGlassLabel(viewModel.cancelLabel, tint: .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        save()
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 62, height: 34)
+                                .background(.regularMaterial, in: Capsule())
+                        } else {
+                            toolbarGlassLabel(viewModel.saveLabel, tint: type == .income ? .green : viewModel.primaryColor, isPrimary: true)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isValid || isSaving)
                 }
             }
             .onAppear {
@@ -218,13 +246,62 @@ struct AddTransactionView: View {
         .premiumPanel(tint: type == .income ? .green : viewModel.primaryColor)
     }
 
+    private var quickAmountChips: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(viewModel.loc("Quick amounts"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(spacing: 8) {
+                ForEach(quickAmountValues, id: \.self) { value in
+                    Button {
+                        Haptics.selection()
+                        amount = cleanAmountText(value)
+                        if selectedCurrency != "native" {
+                            Task { await performConversion() }
+                        }
+                    } label: {
+                        Text("\(CurrencyFormat.currencySymbol(for: selectedCurrency == "native" ? viewModel.currency : selectedCurrency))\(cleanAmountText(value))")
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background((type == .income ? Color.green : viewModel.primaryColor).opacity(0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var quickAmountValues: [Double] {
+        let code = selectedCurrency == "native" ? viewModel.currency : selectedCurrency
+        switch code {
+        case "JPY", "KRW":
+            return [500, 1000, 3000, 5000]
+        case "CNY", "HKD", "TWD":
+            return [20, 50, 100, 200]
+        default:
+            return [5, 10, 25, 50]
+        }
+    }
+
+    private func cleanAmountText(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.2f", value)
+    }
+
     private var currencySelector: some View {
         VStack(spacing: 8) {
             Picker(viewModel.loc("Currency"), selection: $selectedCurrency) {
-                Text(viewModel.currency).tag("native")
+                Text("\(viewModel.currency) \(CurrencyFormat.currencySymbol(for: viewModel.currency))").tag("native")
                 ForEach(CurrencyRateService.supportedCurrencies, id: \.code) { cur in
                     if cur.code != viewModel.currency {
-                        Text("\(cur.code) (\(cur.symbol))").tag(cur.code)
+                        Text("\(cur.code) \(CurrencyFormat.currencySymbol(for: cur.code))").tag(cur.code)
                     }
                 }
             }
@@ -285,10 +362,29 @@ struct AddTransactionView: View {
 
     private var categoryGrid: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(viewModel.categoryLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+            HStack(alignment: .center, spacing: 10) {
+                Text(viewModel.categoryLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                Spacer(minLength: 8)
+
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        showCustomCategoryField.toggle()
+                    }
+                } label: {
+                    Label(viewModel.loc(showCustomCategoryField ? "Cancel" : "New Category"), systemImage: showCustomCategoryField ? "xmark" : "plus")
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                 ForEach(categoryList) { cat in
@@ -321,45 +417,18 @@ struct AddTransactionView: View {
                     }
                     .buttonStyle(.plain)
                 }
-
-                if viewModel.isPro {
-                    Button {
-                        showCustomCategoryField.toggle()
-                    } label: {
-                        VStack(spacing: 6) {
-                            PennyLetIconTile(
-                                symbol: showCustomCategoryField ? "xmark" : "plus",
-                                tint: .teal,
-                                size: 40,
-                                symbolScale: 0.38,
-                                shape: .circle
-                            )
-                            Text(viewModel.loc(showCustomCategoryField ? "Cancel" : "New"))
-                                .font(.system(size: 9, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.72)
-                                .multilineTextAlignment(.center)
-                                .frame(minHeight: 22, alignment: .top)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
 
             if showCustomCategoryField {
                 HStack(spacing: 8) {
                     TextField(viewModel.loc("New Category"), text: $newCategoryName)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.done)
+                        .onSubmit(addCustomCategory)
                         .padding(10)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     Button(viewModel.loc("Add")) {
-                        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !name.isEmpty else { return }
-                        category = name
-                        viewModel.addCustomCategory(name)
-                        newCategoryName = ""
-                        showCustomCategoryField = false
+                        addCustomCategory()
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
@@ -368,6 +437,22 @@ struct AddTransactionView: View {
                     .background(.teal, in: RoundedRectangle(cornerRadius: 8))
                     .disabled(newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if let helper = selectedCategoryHelper {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(helper)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(16)
@@ -527,6 +612,54 @@ struct AddTransactionView: View {
             .premiumActionFill(tint: type == .income ? .green : viewModel.primaryColor, isEnabled: isValid)
         }
         .disabled(!isValid || isSaving)
+    }
+
+    private func toolbarGlassLabel(_ title: String, tint: Color, isPrimary: Bool = false) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(isPrimary ? .white : .primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background {
+                Capsule()
+                    .fill(isPrimary ? tint.opacity(0.95) : Color(.secondarySystemGroupedBackground).opacity(0.86))
+            }
+            .overlay {
+                Capsule()
+                    .fill(.regularMaterial)
+                    .opacity(isPrimary ? 0.16 : 0.42)
+            }
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(isPrimary ? 0.26 : 0.18), lineWidth: 1)
+            }
+            .shadow(color: tint.opacity(isPrimary ? 0.18 : 0.06), radius: 10, y: 4)
+    }
+
+    private var selectedCategoryHelper: String? {
+        switch AppCategory.normalizedCategoryID(for: category, type: type) {
+        case "balance_adjustment":
+            return viewModel.loc("Balance adjustments fix your starting balance. They stay out of spending reports.")
+        case "ignore":
+            return viewModel.loc("Ignore keeps the entry visible but leaves it out of budgets and reports.")
+        case "reimbursement":
+            return viewModel.loc("Reimbursement is money paid back to you. PennyLet uses it to lower the original cost when possible.")
+        default:
+            return nil
+        }
+    }
+
+    private func addCustomCategory() {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        category = name
+        viewModel.addCustomCategory(name)
+        newCategoryName = ""
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            showCustomCategoryField = false
+        }
     }
 
     private func save() {

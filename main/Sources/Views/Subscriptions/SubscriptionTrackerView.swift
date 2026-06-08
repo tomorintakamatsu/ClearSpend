@@ -10,41 +10,61 @@ struct SubscriptionTrackerView: View {
     @State private var inferredSubs: [SubscriptionDetectionService.InferredSubscription] = []
     @State private var addingInferredSubscriptionIDs: Set<String> = []
     @State private var addedInferredSubscriptionIDs: Set<String> = []
+    @State private var pendingDeleteManualSubscription: RecurringSubscription?
 
-    private var manualSubs: [RecurringSubscription] {
-        viewModel.recurringSubscriptions.filter(\.isActive)
-    }
-
-    private var suggestedSubs: [SubscriptionDetectionService.InferredSubscription] {
+    private func makeSnapshot() -> SubscriptionTrackerSnapshot {
+        let manualSubscriptions = viewModel.recurringSubscriptions.filter(\.isActive)
+        let activeDetected = detectedSubs.filter(\.isActive)
+        let expiredDetected = detectedSubs.filter { !$0.isActive }
         let existingNames = Set(
-            manualSubs.map { normalizedName($0.name) } +
+            manualSubscriptions.map { normalizedName($0.name) } +
             detectedSubs.map { normalizedName($0.displayName) }
         )
-        return inferredSubs.filter { !existingNames.contains(normalizedName($0.name)) }
+        let suggestedSubscriptions = inferredSubs.filter { !existingNames.contains(normalizedName($0.name)) }
+        var values: [(currency: String, monthly: Double)] = activeDetected.map { sub in
+            (sub.currencyCode, monthlyValue(for: sub))
+        }
+        values.append(contentsOf: manualSubscriptions.map { ($0.currencyCode, monthlyValue(for: $0)) })
+        let currencyTotals: [(currency: String, formattedMonthly: String, count: Int)] = Dictionary(grouping: values, by: { $0.currency })
+            .map { code, subs in
+                let monthly = subs.reduce(0.0) { $0 + $1.monthly }
+                return (code, CurrencyFormat.format(monthly, currency: code), subs.count)
+            }
+            .sorted { $0.currency < $1.currency }
+
+        return SubscriptionTrackerSnapshot(
+            activeDetected: activeDetected,
+            expiredDetected: expiredDetected,
+            manualSubscriptions: manualSubscriptions,
+            suggestedSubscriptions: suggestedSubscriptions,
+            currencyTotals: currencyTotals
+        )
     }
 
     private let averageDaysPerMonth = 365.2425 / 12.0
     private let weeksPerMonth = (365.2425 / 12.0) / 7.0
 
     var body: some View {
+        let snapshot = makeSnapshot()
+
         ScrollView {
             VStack(spacing: 20) {
                 if viewModel.isBlockVisible(.subscriptionsOverview) {
-                    summaryCard
+                    summaryCard(snapshot: snapshot)
                 }
 
                 actionBar
 
-                if !manualSubs.isEmpty {
-                    manualList
+                if !snapshot.manualSubscriptions.isEmpty {
+                    manualList(snapshot.manualSubscriptions)
                 }
 
-                if viewModel.isBlockVisible(.subscriptionsSuggestions), !suggestedSubs.isEmpty {
-                    suggestedList
+                if viewModel.isBlockVisible(.subscriptionsSuggestions), !snapshot.suggestedSubscriptions.isEmpty {
+                    suggestedList(snapshot.suggestedSubscriptions)
                 }
 
-                if !detectedSubs.filter(\.isActive).isEmpty {
-                    activeList
+                if !snapshot.activeDetected.isEmpty {
+                    activeList(snapshot.activeDetected)
                 }
 
                 if isLoading {
@@ -53,7 +73,7 @@ struct SubscriptionTrackerView: View {
                         Text(scanMessage.isEmpty ? viewModel.loc("Scanning subscriptions...") : scanMessage)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text(viewModel.loc("This checks App Store purchase history that iOS allows this app to access."))
+                        Text(viewModel.loc("Checking App Store purchase info iOS allows."))
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .multilineTextAlignment(.center)
@@ -61,12 +81,12 @@ struct SubscriptionTrackerView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 60)
-                } else if detectedSubs.isEmpty && manualSubs.isEmpty && hasScanned {
+                } else if detectedSubs.isEmpty && snapshot.manualSubscriptions.isEmpty && hasScanned {
                     emptyState
                 }
 
-                if !detectedSubs.filter({ !$0.isActive }).isEmpty {
-                    expiredList
+                if !snapshot.expiredDetected.isEmpty {
+                    expiredList(snapshot.expiredDetected)
                 }
 
                 if !hasScanned && detectedSubs.isEmpty {
@@ -89,6 +109,27 @@ struct SubscriptionTrackerView: View {
         }
         .sheet(isPresented: $showAddSubscription) {
             AddSubscriptionSheet()
+        }
+        .confirmationDialog(
+            viewModel.loc("Delete subscription?"),
+            isPresented: Binding(
+                get: { pendingDeleteManualSubscription != nil },
+                set: { if !$0 { pendingDeleteManualSubscription = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let subscription = pendingDeleteManualSubscription {
+                Button(viewModel.loc("Delete"), role: .destructive) {
+                    Haptics.warning()
+                    viewModel.deleteRecurringSubscription(subscription)
+                    pendingDeleteManualSubscription = nil
+                }
+            }
+            Button(viewModel.cancelLabel, role: .cancel) {}
+        } message: {
+            if let subscription = pendingDeleteManualSubscription {
+                Text(subscription.name)
+            }
         }
     }
 
@@ -152,9 +193,8 @@ struct SubscriptionTrackerView: View {
         }
     }
 
-    private var summaryCard: some View {
-        let activeDetected = detectedSubs.filter(\.isActive)
-        let totalCount = activeDetected.count + manualSubs.count
+    private func summaryCard(snapshot: SubscriptionTrackerSnapshot) -> some View {
+        let totalCount = snapshot.activeDetected.count + snapshot.manualSubscriptions.count
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
@@ -171,16 +211,16 @@ struct SubscriptionTrackerView: View {
                 PennyLetIconTile(symbol: "creditcard.fill", tint: Color(.systemTeal), size: 42, shape: .circle, isProminent: true)
             }
 
-            summarySourceCounts
+            summarySourceCounts(snapshot: snapshot)
 
             VStack(alignment: .leading, spacing: 10) {
-                if currencyTotals.isEmpty {
+                if snapshot.currencyTotals.isEmpty {
                     Text(viewModel.loc("No App Store subscriptions found"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    ForEach(currencyTotals, id: \.currency) { item in
+                    ForEach(snapshot.currencyTotals, id: \.currency) { item in
                         HStack(alignment: .center, spacing: 10) {
                             Text(item.currency)
                                 .font(.caption.weight(.bold))
@@ -208,21 +248,21 @@ struct SubscriptionTrackerView: View {
         .premiumPanel(tint: viewModel.primaryColor)
     }
 
-    private var summarySourceCounts: some View {
+    private func summarySourceCounts(snapshot: SubscriptionTrackerSnapshot) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
             summaryCountPill(
                 title: viewModel.loc("App Store subscriptions"),
-                count: detectedSubs.filter(\.isActive).count,
-                color: Color(.systemBlue)
+                count: snapshot.activeDetected.count,
+                color: viewModel.primaryColor
             )
             summaryCountPill(
                 title: viewModel.loc("Manual subscriptions"),
-                count: manualSubs.count,
+                count: snapshot.manualSubscriptions.count,
                 color: Color(.systemTeal)
             )
             summaryCountPill(
                 title: viewModel.loc("Suggested subscriptions"),
-                count: suggestedSubs.count,
+                count: snapshot.suggestedSubscriptions.count,
                 color: Color(.systemOrange)
             )
         }
@@ -246,79 +286,52 @@ struct SubscriptionTrackerView: View {
         .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private var currencyTotals: [(currency: String, formattedMonthly: String, count: Int)] {
-        let active = detectedSubs.filter(\.isActive)
-        var values: [(currency: String, monthly: Double)] = active.map { sub in
-            (sub.currencyCode, monthlyValue(for: sub))
-        }
-        values.append(contentsOf: manualSubs.map { ($0.currencyCode, monthlyValue(for: $0)) })
-
-        let grouped = Dictionary(grouping: values, by: { $0.currency })
-        return grouped.map { code, subs in
-            let monthly = subs.reduce(0.0) { $0 + $1.monthly }
-            return (code, CurrencyFormat.format(monthly, currency: code), subs.count)
-        }.sorted { $0.currency < $1.currency }
-    }
-
-    private func currencySymbol(_ code: String) -> String {
-        switch code.uppercased() {
-        case "USD": return "$"
-        case "EUR": return "€"
-        case "GBP": return "£"
-        case "JPY", "CNY": return "¥"
-        case "KRW": return "₩"
-        case "CAD": return "CA$"
-        case "AUD": return "A$"
-        default: return code.uppercased()
-        }
-    }
-
     // MARK: - Lists
 
-    private var activeList: some View {
+    private func activeList(_ subscriptions: [SubscriptionDetectionService.DetectedSubscription]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(viewModel.loc("App Store subscriptions"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(detectedSubs.filter(\.isActive)) { sub in
+            ForEach(subscriptions) { sub in
                 subscriptionRow(sub)
             }
         }
     }
 
-    private var manualList: some View {
+    private func manualList(_ subscriptions: [RecurringSubscription]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(viewModel.loc("Manual subscriptions"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(manualSubs) { sub in
+            ForEach(subscriptions) { sub in
                 manualSubscriptionRow(sub)
             }
         }
     }
 
-    private var suggestedList: some View {
+    private func suggestedList(_ subscriptions: [SubscriptionDetectionService.InferredSubscription]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(viewModel.loc("Suggested subscriptions"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(suggestedSubs) { sub in
+            ForEach(subscriptions) { sub in
                 inferredSubscriptionRow(sub)
             }
         }
     }
 
-    private var expiredList: some View {
+    private func expiredList(_ subscriptions: [SubscriptionDetectionService.DetectedSubscription]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(viewModel.loc("Expired"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
 
-            ForEach(detectedSubs.filter { !$0.isActive }) { sub in
+            ForEach(subscriptions) { sub in
                 subscriptionRow(sub)
             }
         }
@@ -437,7 +450,7 @@ struct SubscriptionTrackerView: View {
             .layoutPriority(1)
 
             Button(role: .destructive) {
-                viewModel.deleteRecurringSubscription(sub)
+                pendingDeleteManualSubscription = sub
             } label: {
                 Image(systemName: "trash")
                     .font(.caption.weight(.semibold))
@@ -630,11 +643,11 @@ struct SubscriptionTrackerView: View {
             PennyLetIconTile(symbol: "creditcard.trianglebadge.exclamationmark", tint: Color(.systemTeal), size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(viewModel.loc("No App Store subscriptions found"))
                 .font(.headline)
-            Text(viewModel.loc("Active subscriptions purchased through Apple will appear here automatically."))
+            Text(viewModel.loc("Apple subscriptions appear here."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Text(viewModel.loc("For subscriptions outside the App Store, add them manually so PennyLet can renew them for you."))
+            Text(viewModel.loc("Add non-App Store subscriptions manually."))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -653,15 +666,15 @@ struct SubscriptionTrackerView: View {
 
     private var scanPrompt: some View {
         VStack(spacing: 16) {
-            PennyLetIconTile(symbol: "magnifyingglass.circle.fill", tint: Color(.systemBlue), size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
+            PennyLetIconTile(symbol: "magnifyingglass.circle.fill", tint: viewModel.primaryColor, size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(viewModel.loc("Scan for Subscriptions"))
                 .font(.title3.weight(.semibold))
-            Text(viewModel.loc("PennyLet can detect your active App Store subscriptions and track them automatically."))
+            Text(viewModel.loc("PennyLet can scan eligible App Store subscriptions."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Text(viewModel.loc("This scan only uses purchase information Apple makes available to this app."))
+            Text(viewModel.loc("Uses only purchase info Apple shares with this app."))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -680,6 +693,14 @@ struct SubscriptionTrackerView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
     }
+}
+
+private struct SubscriptionTrackerSnapshot {
+    let activeDetected: [SubscriptionDetectionService.DetectedSubscription]
+    let expiredDetected: [SubscriptionDetectionService.DetectedSubscription]
+    let manualSubscriptions: [RecurringSubscription]
+    let suggestedSubscriptions: [SubscriptionDetectionService.InferredSubscription]
+    let currencyTotals: [(currency: String, formattedMonthly: String, count: Int)]
 }
 
 private struct AddSubscriptionSheet: View {
@@ -980,7 +1001,7 @@ private struct AddSubscriptionSheet: View {
     }
 
     private func currencyLabel(_ currency: (code: String, name: String, symbol: String)) -> String {
-        "\(currency.code) · \(currency.symbol) \(currency.name)"
+        "\(currency.code) \(currency.symbol)"
     }
 
     private func intervalButton(

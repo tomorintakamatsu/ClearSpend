@@ -156,12 +156,17 @@ struct GoalRow: View {
     let currency: String
     let tint: Color
     @Environment(AppViewModel.self) private var viewModel
-    @State private var showsControls = false
+    @State private var showCustomAmountPrompt = false
+    @State private var customAmountText = ""
+
+    private var rowTint: Color {
+        goal.progress >= 1 ? Color(.systemGreen) : tint
+    }
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
-                PennyLetIconTile(symbol: "flag.checkered", tint: Color(.systemIndigo), size: 32, symbolScale: 0.4, shape: .diamond)
+                PennyLetIconTile(symbol: "flag.checkered", tint: rowTint, size: 32, symbolScale: 0.4, shape: .diamond)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(goal.name)
@@ -170,7 +175,7 @@ struct GoalRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Text("\(Int(goal.progress * 100))" + viewModel.loc("% complete"))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(goal.progress >= 1 ? rowTint : .secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                 }
@@ -193,48 +198,36 @@ struct GoalRow: View {
                         .fill(.quaternary)
                         .frame(height: 10)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(tint)
+                        .fill(rowTint)
                         .frame(width: geo.size.width * CGFloat(goal.progress), height: 10)
                 }
             }
             .frame(height: 10)
 
-            Button {
-                withAnimation(AnimationPresets.fold) {
-                    showsControls.toggle()
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+                ForEach(Array(viewModel.goalQuickAddAmounts.enumerated()), id: \.offset) { _, amount in
+                    quickAddButton(amount)
                 }
-            } label: {
-                HStack {
-                    Label(viewModel.loc("Add money"), systemImage: "plus.circle.fill")
-                        .font(.caption.weight(.semibold))
-                    Spacer()
-                    Image(systemName: showsControls ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.bold))
-                }
-                .foregroundStyle(tint)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
-
-            if showsControls {
-                HStack(spacing: 8) {
-                    quickAddButton(10)
-                    quickAddButton(50)
-                    quickAddButton(100)
-                    quickAddButton(500)
-                }
-                .transition(.foldReveal)
+                customAmountButton
             }
         }
         .padding(16)
-        .premiumPanel(tint: tint)
-        .animation(AnimationPresets.fold, value: showsControls)
+        .premiumPanel(tint: rowTint)
+        .alert(viewModel.loc("Custom amount"), isPresented: $showCustomAmountPrompt) {
+            TextField(viewModel.amountLabel, text: $customAmountText)
+                .keyboardType(.decimalPad)
+            Button(viewModel.loc("Add money")) {
+                addCustomAmount()
+            }
+            Button(viewModel.cancelLabel, role: .cancel) {
+                customAmountText = ""
+            }
+        }
     }
 
     private func quickAddButton(_ amount: Double) -> some View {
         Button {
+            Haptics.selection()
             Task {
                 await viewModel.updateGoalAmount(id: goal.id, newAmount: goal.currentAmount + amount)
             }
@@ -246,7 +239,35 @@ struct GoalRow: View {
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(GoalQuickAddButtonStyle(tint: tint))
+        .buttonStyle(GoalQuickAddButtonStyle(tint: rowTint))
+    }
+
+    private var customAmountButton: some View {
+        Button {
+            Haptics.selection()
+            customAmountText = ""
+            showCustomAmountPrompt = true
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(GoalQuickAddButtonStyle(tint: rowTint))
+        .accessibilityLabel(viewModel.loc("Custom amount"))
+    }
+
+    private func addCustomAmount() {
+        guard let amount = CurrencyFormat.parseInput(customAmountText), amount > 0 else {
+            Haptics.error()
+            return
+        }
+        Haptics.success()
+        Task {
+            await viewModel.updateGoalAmount(id: goal.id, newAmount: goal.currentAmount + amount)
+        }
+        customAmountText = ""
     }
 }
 

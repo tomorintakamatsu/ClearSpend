@@ -7,6 +7,15 @@ struct Budget: Codable, Identifiable, Equatable, Sendable {
     var monthlySavingsGoal: Double?
     var description: String?
     var payDay: Int?
+    var startDate: String?
+    var currentSpendableBalance: Double?
+    var cashOnHand: Double?
+    var moneyToKeepUntouched: Double?
+    var billsDueBeforeNextIncome: Double?
+    var savingsDueBeforeNextIncome: Double?
+    var nextIncomeDate: String?
+    var nextIncomeAmount: Double?
+    var incomeCadence: String?
     var currency: String?
     var language: String?
     var theme: String?
@@ -32,6 +41,15 @@ struct Budget: Codable, Identifiable, Equatable, Sendable {
         case monthlyEssentials = "monthly_essentials"
         case monthlySavingsGoal = "monthly_savings_goal"
         case payDay = "pay_day"
+        case startDate = "start_date"
+        case currentSpendableBalance = "current_spendable_balance"
+        case cashOnHand = "cash_on_hand"
+        case moneyToKeepUntouched = "money_to_keep_untouched"
+        case billsDueBeforeNextIncome = "bills_due_before_next_income"
+        case savingsDueBeforeNextIncome = "savings_due_before_next_income"
+        case nextIncomeDate = "next_income_date"
+        case nextIncomeAmount = "next_income_amount"
+        case incomeCadence = "income_cadence"
         case colorMode = "color_mode"
         case categoryLimits = "category_limits"
         case startOfWeek = "start_of_week"
@@ -55,6 +73,15 @@ struct BudgetData: Codable {
     var monthlySavingsGoal: Double?
     var description: String?
     var payDay: Int?
+    var startDate: String?
+    var currentSpendableBalance: Double?
+    var cashOnHand: Double?
+    var moneyToKeepUntouched: Double?
+    var billsDueBeforeNextIncome: Double?
+    var savingsDueBeforeNextIncome: Double?
+    var nextIncomeDate: String?
+    var nextIncomeAmount: Double?
+    var incomeCadence: String?
     var currency: String?
     var language: String?
     var theme: String?
@@ -77,6 +104,15 @@ struct BudgetData: Codable {
         case monthlyEssentials = "monthly_essentials"
         case monthlySavingsGoal = "monthly_savings_goal"
         case payDay = "pay_day"
+        case startDate = "start_date"
+        case currentSpendableBalance = "current_spendable_balance"
+        case cashOnHand = "cash_on_hand"
+        case moneyToKeepUntouched = "money_to_keep_untouched"
+        case billsDueBeforeNextIncome = "bills_due_before_next_income"
+        case savingsDueBeforeNextIncome = "savings_due_before_next_income"
+        case nextIncomeDate = "next_income_date"
+        case nextIncomeAmount = "next_income_amount"
+        case incomeCadence = "income_cadence"
         case colorMode = "color_mode"
         case startOfWeek = "start_of_week"
         case autoAnalysisEnabled = "auto_analysis_enabled"

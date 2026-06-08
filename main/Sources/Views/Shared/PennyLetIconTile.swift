@@ -22,11 +22,33 @@ struct PennyLetIconTile: View {
             Image(systemName: symbol)
                 .font(.system(size: size * symbolScale, weight: .semibold))
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(isProminent ? Color.white : tint, isProminent ? Color.white.opacity(0.62) : tint.opacity(0.42))
+                .foregroundStyle(iconPrimaryStyle, iconSecondaryStyle)
         }
         .frame(width: size, height: size)
         .shadow(color: tint.opacity(isProminent ? 0.12 : 0.07), radius: isProminent ? 10 : 7, y: 4)
         .accessibilityHidden(true)
+    }
+
+    private var iconPrimaryStyle: Color {
+        isProminent ? Color.white : tint
+    }
+
+    private var iconSecondaryStyle: Color {
+        isProminent ? Color.white : tint
+    }
+
+    private var shapeFill: Color {
+        if isProminent {
+            return tint
+        }
+        return tint.opacity(0.20)
+    }
+
+    private var shapeStroke: Color {
+        if isProminent {
+            return Color.white.opacity(0.18)
+        }
+        return tint.opacity(0.24)
     }
 
     @ViewBuilder
@@ -34,31 +56,31 @@ struct PennyLetIconTile: View {
         switch shape {
         case .roundedSquare:
             RoundedRectangle(cornerRadius: min(12, size * 0.28), style: .continuous)
-                .fill(isProminent ? tint : tint.opacity(0.16))
+                .fill(shapeFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: min(12, size * 0.28), style: .continuous)
-                        .stroke(isProminent ? Color.white.opacity(0.18) : tint.opacity(0.18), lineWidth: 1)
+                        .stroke(shapeStroke, lineWidth: 1)
                 }
         case .circle:
             Circle()
-                .fill(isProminent ? tint : tint.opacity(0.16))
+                .fill(shapeFill)
                 .overlay {
                     Circle()
-                        .stroke(isProminent ? Color.white.opacity(0.18) : tint.opacity(0.18), lineWidth: 1)
+                        .stroke(shapeStroke, lineWidth: 1)
                 }
         case .capsule:
             Capsule(style: .continuous)
-                .fill(isProminent ? tint : tint.opacity(0.16))
+                .fill(shapeFill)
                 .overlay {
                     Capsule(style: .continuous)
-                        .stroke(isProminent ? Color.white.opacity(0.18) : tint.opacity(0.18), lineWidth: 1)
+                        .stroke(shapeStroke, lineWidth: 1)
                 }
         case .diamond:
             RoundedRectangle(cornerRadius: min(10, size * 0.22), style: .continuous)
-                .fill(isProminent ? tint : tint.opacity(0.16))
+                .fill(shapeFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: min(10, size * 0.22), style: .continuous)
-                        .stroke(isProminent ? Color.white.opacity(0.18) : tint.opacity(0.18), lineWidth: 1)
+                        .stroke(shapeStroke, lineWidth: 1)
                 }
                 .frame(width: size * 0.74, height: size * 0.74)
                 .rotationEffect(.degrees(45))

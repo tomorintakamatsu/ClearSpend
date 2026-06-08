@@ -1,0 +1,186 @@
+Date,Type,Category,Amount,Note,Merchant,OriginalCurrency,OriginalAmount,ExchangeRate,Account,Description,Tags
+2026-03-01,Expense,Rent / Mortgage,1450.00,monthly rent,Oak Ridge Apartments,USD,1450.00,1.0000,Checking,Rent payment,fixed
+2026-03-01,Expense,Internet,74.99,monthly internet,Verizon Fios,USD,74.99,1.0000,Checking,Internet bill,fixed
+2026-03-01,Expense,Subscriptions,15.99,monthly streaming,Netflix,USD,15.99,1.0000,Checking,Netflix subscription,subscription
+2026-03-02,Expense,Groceries,64.18,weekly groceries,Trader Joes,USD,64.18,1.0000,Checking,Groceries,flexible
+2026-03-02,Expense,Coffee,5.75,morning coffee,Blue Bottle,USD,5.75,1.0000,Credit Card,Coffee,watchlist
+2026-03-03,Expense,Utilities,118.64,electric bill,City Power,USD,118.64,1.0000,Checking,Electric utility,fixed
+2026-03-03,Expense,Dining,28.40,lunch,Sweetgreen,USD,28.40,1.0000,Credit Card,Lunch,flexible
+2026-03-04,Expense,Transport,18.50,metro pass,Metro Transit,USD,18.50,1.0000,Checking,Transit refill,flexible
+2026-03-05,Income,Paycheck,2400.00,first paycheck,Northstar Studio,USD,2400.00,1.0000,Checking,Payroll,income
+2026-03-05,Expense,Phone,62.00,phone bill,T-Mobile,USD,62.00,1.0000,Checking,Phone bill,fixed
+2026-03-06,Expense,Shopping,86.42,household items,Target,USD,86.42,1.0000,Credit Card,Household shopping,flexible
+2026-03-06,Expense,Health,21.00,pharmacy,CVS Pharmacy,USD,21.00,1.0000,Credit Card,Medication,flexible
+2026-03-07,Expense,Dining,42.10,dinner,Chipotle,USD,42.10,1.0000,Credit Card,Dinner,flexible
+2026-03-07,Expense,Entertainment,13.50,movie rental,Apple TV,USD,13.50,1.0000,Credit Card,Movie rental,flexible
+2026-03-08,Expense,Groceries,52.87,weekly groceries,Whole Foods,USD,52.87,1.0000,Checking,Groceries,flexible
+2026-03-08,Expense,Coffee,6.25,coffee,Starbucks,USD,6.25,1.0000,Credit Card,Coffee,watchlist
+2026-03-09,Expense,Subscriptions,10.99,music subscription,Spotify,USD,10.99,1.0000,Checking,Spotify subscription,subscription
+2026-03-09,Expense,Personal,32.00,haircut,Local Barber,USD,32.00,1.0000,Credit Card,Haircut,flexible
+2026-03-10,Transfer,Transfer,300.00,savings transfer,PennyLet Transfer,USD,300.00,1.0000,Checking,Move money to savings,transfer_out
+2026-03-10,Transfer,Transfer,300.00,savings transfer,PennyLet Transfer,USD,300.00,1.0000,Savings,Move money from checking,transfer_in
+2026-03-10,Expense,Minimum Debt Payments,175.00,student loan minimum,Student Loan Servicer,USD,175.00,1.0000,Checking,Minimum debt payment,debt
+2026-03-11,Expense,Groceries,38.91,small groceries,Trader Joes,USD,38.91,1.0000,Checking,Groceries,flexible
+2026-03-11,Expense,Dining,19.80,lunch,Panera Bread,USD,19.80,1.0000,Credit Card,Lunch,flexible
+2026-03-12,Expense,Subscriptions,22.99,design software,Adobe,USD,22.99,1.0000,Checking,Adobe subscription,subscription
+2026-03-12,Expense,Transport,46.00,gas,Shell,USD,46.00,1.0000,Credit Card,Gas,flexible
+2026-03-13,Expense,Coffee,5.25,coffee,Blue Bottle,USD,5.25,1.0000,Credit Card,Coffee,watchlist
+2026-03-13,Expense,Shopping,119.99,online order,Amazon,USD,119.99,1.0000,Credit Card,Amazon order,watchlist
+2026-03-14,Expense,Travel,68.00,train ticket,Amtrak,USD,68.00,1.0000,Credit Card,Weekend trip,non_monthly
+2026-03-14,Expense,Dining,33.75,dinner,Local Ramen,USD,33.75,1.0000,Credit Card,Dinner,flexible
+2026-03-15,Income,Side Income,320.00,freelance payment,Design Client,USD,320.00,1.0000,Checking,Freelance work,income
+2026-03-15,Expense,Insurance,142.00,car insurance,State Auto Insurance,USD,142.00,1.0000,Checking,Insurance bill,fixed
+2026-03-16,Expense,Groceries,71.44,weekly groceries,Trader Joes,USD,71.44,1.0000,Checking,Groceries,flexible
+2026-03-16,Expense,Subscriptions,2.99,cloud storage,Apple iCloud,USD,2.99,1.0000,Checking,iCloud subscription,subscription
+2026-03-17,Expense,Coffee,7.10,coffee and snack,Starbucks,USD,7.10,1.0000,Credit Card,Coffee,watchlist
+2026-03-17,Expense,Health,48.00,gym monthly,FitClub Gym,USD,48.00,1.0000,Checking,Gym membership,subscription
+2026-03-18,Expense,Dining,24.60,lunch,Cava,USD,24.60,1.0000,Credit Card,Lunch,flexible
+2026-03-18,Expense,Shopping,54.35,pet supplies,Petco,USD,54.35,1.0000,Credit Card,Pet supplies,flexible
+2026-03-19,Expense,Groceries,43.25,market,Whole Foods,USD,43.25,1.0000,Checking,Groceries,flexible
+2026-03-19,Expense,Entertainment,18.99,game purchase,Steam,USD,18.99,1.0000,Credit Card,Game purchase,watchlist
+2026-03-20,Income,Paycheck,2400.00,second paycheck,Northstar Studio,USD,2400.00,1.0000,Checking,Payroll,income
+2026-03-20,Expense,Emergency Fund,250.00,goal contribution,PennyLet Goal,USD,250.00,1.0000,Savings,Emergency fund contribution,goal
+2026-03-21,Expense,Dining,57.20,friends dinner,Thai Garden,USD,57.20,1.0000,Credit Card,Dinner,flexible
+2026-03-21,Expense,Coffee,5.95,coffee,Blue Bottle,USD,5.95,1.0000,Credit Card,Coffee,watchlist
+2026-03-22,Expense,Groceries,91.83,weekly groceries,Costco,USD,91.83,1.0000,Checking,Groceries,flexible
+2026-03-22,Expense,Car Maintenance,36.50,car wash,Quick Wash,USD,36.50,1.0000,Credit Card,Car wash,non_monthly
+2026-03-23,Expense,Subscriptions,12.99,apple music,Apple Music,USD,12.99,1.0000,Checking,Apple Music subscription,subscription
+2026-03-23,Refund,Refund,30.00,partial return,Target,USD,30.00,1.0000,Credit Card,Refund for household item,refund
+2026-03-24,Expense,Dining,16.40,lunch,Taco Bell,USD,16.40,1.0000,Credit Card,Lunch,flexible
+2026-03-24,Expense,Transport,22.00,rideshare,Lyft,USD,22.00,1.0000,Credit Card,Rideshare,flexible
+2026-03-25,Transfer,Credit Card Payment,820.00,card payment,Card Payment,USD,820.00,1.0000,Checking,Payment to credit card,credit_card_payment_out
+2026-03-25,Transfer,Credit Card Payment,820.00,card payment,Card Payment,USD,820.00,1.0000,Credit Card,Payment received,credit_card_payment_in
+2026-03-26,Expense,Coffee,6.80,coffee,Starbucks,USD,6.80,1.0000,Credit Card,Coffee,watchlist
+2026-03-26,Expense,Shopping,42.50,books,Bookshop,USD,42.50,1.0000,Credit Card,Books,flexible
+2026-03-27,Expense,Medical,75.00,clinic copay,City Clinic,USD,75.00,1.0000,Credit Card,Medical visit,non_monthly
+2026-03-27,Reimbursement,Reimbursement,40.00,friend paid back,Alex Reimbursement,USD,40.00,1.0000,Checking,Dinner reimbursement,reimbursement
+2026-03-28,Expense,Groceries,58.76,weekly groceries,Trader Joes,USD,58.76,1.0000,Checking,Groceries,flexible
+2026-03-28,Expense,Dining,31.10,dinner,Shake Shack,USD,31.10,1.0000,Credit Card,Dinner,flexible
+2026-03-29,Expense,Shopping,89.00,online order,Amazon,USD,89.00,1.0000,Credit Card,Amazon order,watchlist
+2026-03-29,Expense,Coffee,5.50,coffee,Blue Bottle,USD,5.50,1.0000,Credit Card,Coffee,watchlist
+2026-03-30,Expense,Annual Fees,99.00,annual app fee,YNAB,USD,99.00,1.0000,Credit Card,Annual software fee,non_monthly
+2026-03-30,Expense,Personal,27.99,personal care,Ulta,USD,27.99,1.0000,Credit Card,Personal care,flexible
+2026-03-31,Expense,Groceries,35.48,forgotten duplicate test,Trader Joes,USD,35.48,1.0000,Checking,Groceries,possible_duplicate
+2026-03-31,Expense,Groceries,35.48,forgotten duplicate test,Trader Joes,USD,35.48,1.0000,Checking,Groceries,possible_duplicate
+2026-04-01,Expense,Rent / Mortgage,1450.00,monthly rent,Oak Ridge Apartments,USD,1450.00,1.0000,Checking,Rent payment,fixed
+2026-04-01,Expense,Internet,74.99,monthly internet,Verizon Fios,USD,74.99,1.0000,Checking,Internet bill,fixed
+2026-04-01,Expense,Subscriptions,15.99,monthly streaming,Netflix,USD,15.99,1.0000,Checking,Netflix subscription,subscription
+2026-04-02,Expense,Groceries,68.33,weekly groceries,Trader Joes,USD,68.33,1.0000,Checking,Groceries,flexible
+2026-04-02,Expense,Coffee,6.10,morning coffee,Blue Bottle,USD,6.10,1.0000,Credit Card,Coffee,watchlist
+2026-04-03,Expense,Utilities,105.22,electric bill,City Power,USD,105.22,1.0000,Checking,Electric utility,fixed
+2026-04-03,Expense,Dining,22.75,lunch,Sweetgreen,USD,22.75,1.0000,Credit Card,Lunch,flexible
+2026-04-04,Expense,Transport,18.50,metro pass,Metro Transit,USD,18.50,1.0000,Checking,Transit refill,flexible
+2026-04-05,Income,Paycheck,2400.00,first paycheck,Northstar Studio,USD,2400.00,1.0000,Checking,Payroll,income
+2026-04-05,Expense,Phone,62.00,phone bill,T-Mobile,USD,62.00,1.0000,Checking,Phone bill,fixed
+2026-04-06,Expense,Shopping,74.16,household items,Target,USD,74.16,1.0000,Credit Card,Household shopping,flexible
+2026-04-06,Expense,Health,19.00,pharmacy,CVS Pharmacy,USD,19.00,1.0000,Credit Card,Medication,flexible
+2026-04-07,Expense,Dining,39.80,dinner,Chipotle,USD,39.80,1.0000,Credit Card,Dinner,flexible
+2026-04-07,Expense,Entertainment,14.99,movie rental,Apple TV,USD,14.99,1.0000,Credit Card,Movie rental,flexible
+2026-04-08,Expense,Groceries,57.42,weekly groceries,Whole Foods,USD,57.42,1.0000,Checking,Groceries,flexible
+2026-04-08,Expense,Coffee,6.45,coffee,Starbucks,USD,6.45,1.0000,Credit Card,Coffee,watchlist
+2026-04-09,Expense,Subscriptions,10.99,music subscription,Spotify,USD,10.99,1.0000,Checking,Spotify subscription,subscription
+2026-04-09,Expense,Personal,34.00,haircut,Local Barber,USD,34.00,1.0000,Credit Card,Haircut,flexible
+2026-04-10,Transfer,Transfer,300.00,savings transfer,PennyLet Transfer,USD,300.00,1.0000,Checking,Move money to savings,transfer_out
+2026-04-10,Transfer,Transfer,300.00,savings transfer,PennyLet Transfer,USD,300.00,1.0000,Savings,Move money from checking,transfer_in
+2026-04-10,Expense,Minimum Debt Payments,175.00,student loan minimum,Student Loan Servicer,USD,175.00,1.0000,Checking,Minimum debt payment,debt
+2026-04-11,Expense,Groceries,42.19,small groceries,Trader Joes,USD,42.19,1.0000,Checking,Groceries,flexible
+2026-04-11,Expense,Dining,21.90,lunch,Panera Bread,USD,21.90,1.0000,Credit Card,Lunch,flexible
+2026-04-12,Expense,Subscriptions,22.99,design software,Adobe,USD,22.99,1.0000,Checking,Adobe subscription,subscription
+2026-04-12,Expense,Transport,51.20,gas,Shell,USD,51.20,1.0000,Credit Card,Gas,flexible
+2026-04-13,Expense,Coffee,5.40,coffee,Blue Bottle,USD,5.40,1.0000,Credit Card,Coffee,watchlist
+2026-04-13,Expense,Shopping,132.45,online order,Amazon,USD,132.45,1.0000,Credit Card,Amazon order,watchlist
+2026-04-14,Expense,Travel,125.00,hotel deposit,Marriott,USD,125.00,1.0000,Credit Card,Travel deposit,non_monthly
+2026-04-14,Expense,Dining,36.80,dinner,Local Ramen,USD,36.80,1.0000,Credit Card,Dinner,flexible
+2026-04-15,Income,Side Income,450.00,freelance payment,Design Client,USD,450.00,1.0000,Checking,Freelance work,income
+2026-04-15,Expense,Insurance,142.00,car insurance,State Auto Insurance,USD,142.00,1.0000,Checking,Insurance bill,fixed
+2026-04-16,Expense,Groceries,69.12,weekly groceries,Trader Joes,USD,69.12,1.0000,Checking,Groceries,flexible
+2026-04-16,Expense,Subscriptions,2.99,cloud storage,Apple iCloud,USD,2.99,1.0000,Checking,iCloud subscription,subscription
+2026-04-17,Expense,Coffee,7.25,coffee and snack,Starbucks,USD,7.25,1.0000,Credit Card,Coffee,watchlist
+2026-04-17,Expense,Health,48.00,gym monthly,FitClub Gym,USD,48.00,1.0000,Checking,Gym membership,subscription
+2026-04-18,Expense,Dining,25.10,lunch,Cava,USD,25.10,1.0000,Credit Card,Lunch,flexible
+2026-04-18,Expense,Shopping,47.85,pet supplies,Petco,USD,47.85,1.0000,Credit Card,Pet supplies,flexible
+2026-04-19,Expense,Groceries,44.08,market,Whole Foods,USD,44.08,1.0000,Checking,Groceries,flexible
+2026-04-19,Expense,Entertainment,24.99,game purchase,Steam,USD,24.99,1.0000,Credit Card,Game purchase,watchlist
+2026-04-20,Income,Paycheck,2400.00,second paycheck,Northstar Studio,USD,2400.00,1.0000,Checking,Payroll,income
+2026-04-20,Expense,Emergency Fund,250.00,goal contribution,PennyLet Goal,USD,250.00,1.0000,Savings,Emergency fund contribution,goal
+2026-04-21,Expense,Dining,62.40,friends dinner,Thai Garden,USD,62.40,1.0000,Credit Card,Dinner,flexible
+2026-04-21,Expense,Coffee,6.05,coffee,Blue Bottle,USD,6.05,1.0000,Credit Card,Coffee,watchlist
+2026-04-22,Expense,Groceries,98.12,weekly groceries,Costco,USD,98.12,1.0000,Checking,Groceries,flexible
+2026-04-22,Expense,Car Maintenance,286.00,oil and tires,AutoCare Center,USD,286.00,1.0000,Credit Card,Car maintenance,non_monthly
+2026-04-23,Expense,Subscriptions,12.99,apple music,Apple Music,USD,12.99,1.0000,Checking,Apple Music subscription,subscription
+2026-04-23,Refund,Refund,42.00,amazon return,Amazon,USD,42.00,1.0000,Credit Card,Refund for order,refund
+2026-04-24,Expense,Dining,18.50,lunch,Taco Bell,USD,18.50,1.0000,Credit Card,Lunch,flexible
+2026-04-24,Expense,Transport,27.60,rideshare,Lyft,USD,27.60,1.0000,Credit Card,Rideshare,flexible
+2026-04-25,Transfer,Credit Card Payment,910.00,card payment,Card Payment,USD,910.00,1.0000,Checking,Payment to credit card,credit_card_payment_out
+2026-04-25,Transfer,Credit Card Payment,910.00,card payment,Card Payment,USD,910.00,1.0000,Credit Card,Payment received,credit_card_payment_in
+2026-04-26,Expense,Coffee,6.70,coffee,Starbucks,USD,6.70,1.0000,Credit Card,Coffee,watchlist
+2026-04-26,Expense,Shopping,39.99,books,Bookshop,USD,39.99,1.0000,Credit Card,Books,flexible
+2026-04-27,Expense,Medical,22.00,prescription,CVS Pharmacy,USD,22.00,1.0000,Credit Card,Prescription,non_monthly
+2026-04-27,Reimbursement,Reimbursement,65.00,work expense paid back,Northstar Studio,USD,65.00,1.0000,Checking,Office supply reimbursement,reimbursement
+2026-04-28,Expense,Groceries,61.23,weekly groceries,Trader Joes,USD,61.23,1.0000,Checking,Groceries,flexible
+2026-04-28,Expense,Dining,29.40,dinner,Shake Shack,USD,29.40,1.0000,Credit Card,Dinner,flexible
+2026-04-29,Expense,Shopping,76.00,online order,Amazon,USD,76.00,1.0000,Credit Card,Amazon order,watchlist
+2026-04-29,Expense,Coffee,5.85,coffee,Blue Bottle,USD,5.85,1.0000,Credit Card,Coffee,watchlist
+2026-04-30,Expense,Taxes,180.00,estimated tax,IRS Direct Pay,USD,180.00,1.0000,Checking,Tax set aside,non_monthly
+2026-04-30,Expense,Personal,31.49,personal care,Ulta,USD,31.49,1.0000,Credit Card,Personal care,flexible
+2026-04-30,Adjustment,Balance Adjustment,12.00,opening balance correction,PennyLet Adjustment,USD,12.00,1.0000,Checking,Balance adjustment,adjustment
+2026-05-01,Expense,Rent / Mortgage,1450.00,monthly rent,Oak Ridge Apartments,USD,1450.00,1.0000,Checking,Rent payment,fixed
+2026-05-01,Expense,Internet,74.99,monthly internet,Verizon Fios,USD,74.99,1.0000,Checking,Internet bill,fixed
+2026-05-01,Expense,Subscriptions,15.99,monthly streaming,Netflix,USD,15.99,1.0000,Checking,Netflix subscription,subscription
+2026-05-02,Expense,Groceries,66.91,weekly groceries,Trader Joes,USD,66.91,1.0000,Checking,Groceries,flexible
+2026-05-02,Expense,Coffee,5.95,morning coffee,Blue Bottle,USD,5.95,1.0000,Credit Card,Coffee,watchlist
+2026-05-03,Expense,Utilities,96.40,electric bill,City Power,USD,96.40,1.0000,Checking,Electric utility,fixed
+2026-05-03,Expense,Dining,26.30,lunch,Sweetgreen,USD,26.30,1.0000,Credit Card,Lunch,flexible
+2026-05-04,Expense,Transport,18.50,metro pass,Metro Transit,USD,18.50,1.0000,Checking,Transit refill,flexible
+2026-05-05,Income,Paycheck,2400.00,first paycheck,Northstar Studio,USD,2400.00,1.0000,Checking,Payroll,income
+2026-05-05,Expense,Phone,62.00,phone bill,T-Mobile,USD,62.00,1.0000,Checking,Phone bill,fixed
+2026-05-06,Expense,Shopping,82.75,household items,Target,USD,82.75,1.0000,Credit Card,Household shopping,flexible
+2026-05-06,Expense,Health,24.00,pharmacy,CVS Pharmacy,USD,24.00,1.0000,Credit Card,Medication,flexible
+2026-05-07,Expense,Dining,41.25,dinner,Chipotle,USD,41.25,1.0000,Credit Card,Dinner,flexible
+2026-05-07,Expense,Entertainment,16.99,movie rental,Apple TV,USD,16.99,1.0000,Credit Card,Movie rental,flexible
+2026-05-08,Expense,Groceries,59.36,weekly groceries,Whole Foods,USD,59.36,1.0000,Checking,Groceries,flexible
+2026-05-08,Expense,Coffee,6.55,coffee,Starbucks,USD,6.55,1.0000,Credit Card,Coffee,watchlist
+2026-05-09,Expense,Subscriptions,10.99,music subscription,Spotify,USD,10.99,1.0000,Checking,Spotify subscription,subscription
+2026-05-09,Expense,Personal,35.00,haircut,Local Barber,USD,35.00,1.0000,Credit Card,Haircut,flexible
+2026-05-10,Transfer,Transfer,300.00,savings transfer,PennyLet Transfer,USD,300.00,1.0000,Checking,Move money to savings,transfer_out
+2026-05-10,Transfer,Transfer,300.00,savings transfer,PennyLet Transfer,USD,300.00,1.0000,Savings,Move money from checking,transfer_in
+2026-05-10,Expense,Minimum Debt Payments,175.00,student loan minimum,Student Loan Servicer,USD,175.00,1.0000,Checking,Minimum debt payment,debt
+2026-05-11,Expense,Groceries,40.26,small groceries,Trader Joes,USD,40.26,1.0000,Checking,Groceries,flexible
+2026-05-11,Expense,Dining,23.80,lunch,Panera Bread,USD,23.80,1.0000,Credit Card,Lunch,flexible
+2026-05-12,Expense,Subscriptions,22.99,design software,Adobe,USD,22.99,1.0000,Checking,Adobe subscription,subscription
+2026-05-12,Expense,Transport,49.30,gas,Shell,USD,49.30,1.0000,Credit Card,Gas,flexible
+2026-05-13,Expense,Coffee,5.35,coffee,Blue Bottle,USD,5.35,1.0000,Credit Card,Coffee,watchlist
+2026-05-13,Expense,Shopping,146.10,online order,Amazon,USD,146.10,1.0000,Credit Card,Amazon order,watchlist
+2026-05-14,Expense,Travel,224.00,flight deposit,Delta Airlines,USD,224.00,1.0000,Credit Card,Travel deposit,non_monthly
+2026-05-14,Expense,Dining,34.25,dinner,Local Ramen,USD,34.25,1.0000,Credit Card,Dinner,flexible
+2026-05-15,Income,Side Income,380.00,freelance payment,Design Client,USD,380.00,1.0000,Checking,Freelance work,income
+2026-05-15,Expense,Insurance,142.00,car insurance,State Auto Insurance,USD,142.00,1.0000,Checking,Insurance bill,fixed
+2026-05-16,Expense,Groceries,73.55,weekly groceries,Trader Joes,USD,73.55,1.0000,Checking,Groceries,flexible
+2026-05-16,Expense,Subscriptions,2.99,cloud storage,Apple iCloud,USD,2.99,1.0000,Checking,iCloud subscription,subscription
+2026-05-17,Expense,Coffee,7.00,coffee and snack,Starbucks,USD,7.00,1.0000,Credit Card,Coffee,watchlist
+2026-05-17,Expense,Health,48.00,gym monthly,FitClub Gym,USD,48.00,1.0000,Checking,Gym membership,subscription
+2026-05-18,Expense,Dining,24.95,lunch,Cava,USD,24.95,1.0000,Credit Card,Lunch,flexible
+2026-05-18,Expense,Shopping,52.60,pet supplies,Petco,USD,52.60,1.0000,Credit Card,Pet supplies,flexible
+2026-05-19,Expense,Groceries,46.40,market,Whole Foods,USD,46.40,1.0000,Checking,Groceries,flexible
+2026-05-19,Expense,Entertainment,29.99,game purchase,Steam,USD,29.99,1.0000,Credit Card,Game purchase,watchlist
+2026-05-20,Income,Paycheck,2400.00,second paycheck,Northstar Studio,USD,2400.00,1.0000,Checking,Payroll,income
+2026-05-20,Expense,Emergency Fund,250.00,goal contribution,PennyLet Goal,USD,250.00,1.0000,Savings,Emergency fund contribution,goal
+2026-05-21,Expense,Dining,59.15,friends dinner,Thai Garden,USD,59.15,1.0000,Credit Card,Dinner,flexible
+2026-05-21,Expense,Coffee,6.00,coffee,Blue Bottle,USD,6.00,1.0000,Credit Card,Coffee,watchlist
+2026-05-22,Expense,Groceries,102.84,weekly groceries,Costco,USD,102.84,1.0000,Checking,Groceries,flexible
+2026-05-22,Expense,Home Maintenance,112.75,hardware store,Home Depot,USD,112.75,1.0000,Credit Card,Home supplies,non_monthly
+2026-05-23,Expense,Subscriptions,12.99,apple music,Apple Music,USD,12.99,1.0000,Checking,Apple Music subscription,subscription
+2026-05-23,Refund,Refund,58.00,target return,Target,USD,58.00,1.0000,Credit Card,Refund for household item,refund
+2026-05-24,Expense,Dining,17.70,lunch,Taco Bell,USD,17.70,1.0000,Credit Card,Lunch,flexible
+2026-05-24,Expense,Transport,31.20,rideshare,Lyft,USD,31.20,1.0000,Credit Card,Rideshare,flexible
+2026-05-25,Transfer,Credit Card Payment,980.00,card payment,Card Payment,USD,980.00,1.0000,Checking,Payment to credit card,credit_card_payment_out
+2026-05-25,Transfer,Credit Card Payment,980.00,card payment,Card Payment,USD,980.00,1.0000,Credit Card,Payment received,credit_card_payment_in
+2026-05-26,Expense,Coffee,6.90,coffee,Starbucks,USD,6.90,1.0000,Credit Card,Coffee,watchlist
+2026-05-26,Expense,Shopping,44.25,books,Bookshop,USD,44.25,1.0000,Credit Card,Books,flexible
+2026-05-27,Expense,Medical,95.00,dental copay,Bright Dental,USD,95.00,1.0000,Credit Card,Dental visit,non_monthly
+2026-05-27,Reimbursement,Reimbursement,50.00,friend paid back,Alex Reimbursement,USD,50.00,1.0000,Checking,Dinner reimbursement,reimbursement
+2026-05-28,Expense,Groceries,63.10,weekly groceries,Trader Joes,USD,63.10,1.0000,Checking,Groceries,flexible
+2026-05-28,Expense,Dining,32.85,dinner,Shake Shack,USD,32.85,1.0000,Credit Card,Dinner,flexible
+2026-05-29,Expense,Shopping,94.00,online order,Amazon,USD,94.00,1.0000,Credit Card,Amazon order,watchlist
+2026-05-29,Expense,Coffee,5.60,coffee,Blue Bottle,USD,5.60,1.0000,Credit Card,Coffee,watchlist
+2026-05-29,Expense,Gifts,45.00,birthday gift,Etsy,USD,45.00,1.0000,Credit Card,Gift purchase,non_monthly

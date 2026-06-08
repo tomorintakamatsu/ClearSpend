@@ -9,7 +9,7 @@ struct TransactionListView: View {
 
     enum FilterType: String, CaseIterable { case all, income, expense }
 
-    var filtered: [Transaction] {
+    private func makeSnapshot() -> TransactionListSnapshot {
         var result = viewModel.transactions
         switch filter {
         case .income: result = result.filter { $0.type == .income }
@@ -24,28 +24,31 @@ struct TransactionListView: View {
                 ($0.category ?? "").localizedCaseInsensitiveContains(q)
             }
         }
-        return result
-    }
 
-    var groupedByDate: [(String, [Transaction])] {
-        let grouped = Dictionary(grouping: filtered) { $0.date }
-        return grouped.sorted { $0.key > $1.key }
-    }
-
-    private var filteredTotal: Double {
-        filtered.reduce(0) { $0 + $1.signedAmount }
-    }
-
-    private var filteredIncomeTotal: Double {
-        filtered.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
-    }
-
-    private var filteredExpenseTotal: Double {
-        filtered.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        let totals = result.reduce(into: (total: 0.0, income: 0.0, expense: 0.0)) { partial, transaction in
+            partial.total += transaction.signedAmount
+            switch transaction.type {
+            case .income:
+                partial.income += transaction.amount
+            case .expense:
+                partial.expense += transaction.amount
+            }
+        }
+        let grouped = Dictionary(grouping: result) { $0.date }
+            .sorted { $0.key > $1.key }
+        return TransactionListSnapshot(
+            filteredCount: result.count,
+            groupedByDate: grouped,
+            total: totals.total,
+            incomeTotal: totals.income,
+            expenseTotal: totals.expense
+        )
     }
 
     var body: some View {
-        transactionList
+        let snapshot = makeSnapshot()
+
+        transactionList(snapshot: snapshot)
             .clearSpendScreenBackground(theme: viewModel.theme)
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: filter)
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: searchText)
@@ -54,15 +57,15 @@ struct TransactionListView: View {
             .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var transactionList: some View {
+    private func transactionList(snapshot: TransactionListSnapshot) -> some View {
         List {
             if viewModel.isBlockVisible(.activityFilter) {
                 filterSection
             }
             if viewModel.isBlockVisible(.activitySummary) {
-                summarySection
+                summarySection(snapshot: snapshot)
             }
-            transactionSections
+            transactionSections(snapshot: snapshot)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -82,7 +85,7 @@ struct TransactionListView: View {
                 }
             }
             .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .themedMiniPanel(tint: viewModel.primaryColor, cornerRadius: 16, colorStrength: 0.7)
             .accessibilityLabel(viewModel.loc("Filter"))
             .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 8, trailing: 20))
             .listRowBackground(Color.clear)
@@ -90,13 +93,13 @@ struct TransactionListView: View {
         }
     }
 
-    private var summarySection: some View {
+    private func summarySection(snapshot: TransactionListSnapshot) -> some View {
         Section {
             ActivitySummaryCard(
-                count: filtered.count,
-                total: filteredTotal,
-                incomeTotal: filteredIncomeTotal,
-                expenseTotal: filteredExpenseTotal,
+                count: snapshot.filteredCount,
+                total: snapshot.total,
+                incomeTotal: snapshot.incomeTotal,
+                expenseTotal: snapshot.expenseTotal,
                 currency: viewModel.currency,
                 filterName: viewModel.loc(filter.rawValue.capitalized),
                 filter: filter,
@@ -108,8 +111,8 @@ struct TransactionListView: View {
         }
     }
 
-    private var transactionSections: some View {
-        ForEach(Array(groupedByDate.enumerated()), id: \.element.0) { _, group in
+    private func transactionSections(snapshot: TransactionListSnapshot) -> some View {
+        ForEach(Array(snapshot.groupedByDate.enumerated()), id: \.element.0) { _, group in
             let (date, items) = group
             Section {
                 ForEach(Array(items.enumerated()), id: \.element.id) { itemIndex, tx in
@@ -160,6 +163,14 @@ struct TransactionListView: View {
     }
 }
 
+private struct TransactionListSnapshot {
+    let filteredCount: Int
+    let groupedByDate: [(String, [Transaction])]
+    let total: Double
+    let incomeTotal: Double
+    let expenseTotal: Double
+}
+
 private struct ActivitySummaryCard: View {
     @Environment(AppViewModel.self) private var viewModel
     let count: Int
@@ -193,7 +204,7 @@ private struct ActivitySummaryCard: View {
 
     private var summaryHeader: some View {
         HStack(alignment: .center, spacing: 14) {
-            PennyLetIconTile(symbol: "list.bullet.rectangle.portrait.fill", tint: Color(.systemBlue), size: 44, shape: .capsule, isProminent: true)
+            PennyLetIconTile(symbol: "list.bullet.rectangle.portrait.fill", tint: viewModel.primaryColor, size: 44, shape: .capsule, isProminent: true)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
@@ -255,6 +266,6 @@ private struct ActivitySummaryCard: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .themedMiniPanel(tint: color, cornerRadius: 14)
     }
 }

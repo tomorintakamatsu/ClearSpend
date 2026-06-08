@@ -23,26 +23,29 @@ struct UpgradeView: View {
                     proHero
                         .cardEntrance(index: 0)
 
+                    corePromiseCard
+                        .cardEntrance(index: 1)
+
                     if isLoading {
                         ProgressView()
                             .padding(24)
                             .frame(maxWidth: .infinity)
                             .premiumPanel(tint: .yellow)
-                            .cardEntrance(index: 1)
+                            .cardEntrance(index: 2)
                     } else {
                         pricingSection
-                            .cardEntrance(index: 1)
+                            .cardEntrance(index: 2)
                     }
 
                     featuresList
-                        .cardEntrance(index: 2)
+                        .cardEntrance(index: 3)
 
                     comparisonTable
-                        .cardEntrance(index: 3)
+                        .cardEntrance(index: 4)
 
                     if let product = selectedProduct {
                         subscribeButton(for: product)
-                            .cardEntrance(index: 4)
+                            .cardEntrance(index: 5)
                         .disabled(isPurchasing)
                     }
 
@@ -53,7 +56,7 @@ struct UpgradeView: View {
                     Button(viewModel.loc("Restore Purchases")) {
                         Task { await restore() }
                     }
-                    .font(.subheadline).foregroundStyle(viewModel.primaryColor)
+                    .font(.subheadline).foregroundStyle(.yellow)
 
                     if let msg = restoreMessage {
                         Text(msg).font(.caption)
@@ -72,7 +75,7 @@ struct UpgradeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             }
-            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
+            .clearSpendScreenBackground(theme: .honey, allowsWallpaper: false)
             .navigationTitle(viewModel.loc("Upgrade"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -102,13 +105,48 @@ struct UpgradeView: View {
             }
 
             HStack(spacing: 8) {
-                heroChip(viewModel.loc("Higher AI limits"))
+                heroChip(viewModel.loc("More private reports"))
                 heroChip(viewModel.loc("Forecasts"))
-                heroChip(viewModel.loc("Charts"))
+                heroChip(viewModel.loc("Auto check-ins"))
             }
         }
         .padding(20)
         .premiumPanel(tint: .yellow)
+    }
+
+    private var corePromiseCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(viewModel.loc("Always included"))
+                .font(.headline.weight(.bold))
+
+            VStack(spacing: 10) {
+                corePromiseRow(icon: "lock.fill", title: viewModel.loc("No bank login"), detail: viewModel.loc("PennyLet never asks for bank credentials."))
+                corePromiseRow(icon: "clock.badge.checkmark", title: viewModel.loc("Start from today"), detail: viewModel.loc("Old transactions are optional. Today's snapshot is enough to begin."))
+                corePromiseRow(icon: "checkmark.seal.fill", title: viewModel.loc("Explainable numbers"), detail: viewModel.loc("Safe to Spend is based on saved local data, bills, goals, and set-asides."))
+            }
+        }
+        .padding(16)
+        .premiumPanel(tint: .yellow)
+    }
+
+    private func corePromiseRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.yellow)
+                .frame(width: 28, height: 28)
+                .background(.yellow.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func heroChip(_ title: String) -> some View {
@@ -202,7 +240,7 @@ struct UpgradeView: View {
                 .font(.headline.weight(.bold))
 
             ForEach(Array(proFeatures.enumerated()), id: \.element.0) { index, feature in
-                let (icon, title, _) = feature
+                let (icon, title, detail) = feature
                 HStack(spacing: 10) {
                     Image(systemName: icon)
                         .font(.callout.weight(.semibold))
@@ -212,6 +250,10 @@ struct UpgradeView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(title)
                             .font(.headline.weight(.semibold))
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                 }
@@ -224,12 +266,13 @@ struct UpgradeView: View {
 
     private var proFeatures: [(String, String, String)] {
         [
-            ("sparkles", viewModel.loc("More AI Analyses"), viewModel.loc("30 daily, 15 weekly, 10 monthly, and 3 forecasts every month")),
-            ("chart.line.uptrend.xyaxis", viewModel.loc("Spending Forecasts"), viewModel.loc("AI predicts next month's spending based on your history")),
-            ("chart.pie.fill", viewModel.loc("Visual Pie Charts"), viewModel.loc("Beautiful spending breakdown charts in weekly and monthly reports")),
-            ("tag.fill", viewModel.loc("Custom Categories"), viewModel.loc("Create your own spending and income categories")),
-            ("clock.arrow.2.circlepath", viewModel.autoAnalysisLabel, viewModel.loc("Schedule automatic daily, weekly, and monthly AI analysis")),
-            ("wand.and.stars", viewModel.loc("Richer AI reports"), viewModel.loc("Extra anomaly checks and tailored tips in AI reports")),
+            ("sparkles", viewModel.loc("More private reports"), viewModel.loc("More daily, weekly, monthly, and forecast runs")),
+            ("chart.line.uptrend.xyaxis", viewModel.loc("Spending Forecasts"), viewModel.loc("Forecasts from your saved history")),
+            ("doc.text.magnifyingglass", viewModel.loc("Source-backed AI checks"), viewModel.loc("Reports stay tied to saved PennyLet data")),
+            ("chart.pie.fill", viewModel.loc("Visual Pie Charts"), viewModel.loc("Clear weekly and monthly category charts")),
+            ("tag.fill", viewModel.loc("Custom Categories"), viewModel.loc("Create categories that match your life")),
+            ("clock.arrow.2.circlepath", viewModel.autoAnalysisLabel, viewModel.loc("Scheduled check-ins without opening the app")),
+            ("iphone", viewModel.loc("Local fallback reports"), viewModel.loc("A local summary appears if online AI is slow")),
         ]
     }
 
@@ -256,6 +299,11 @@ struct UpgradeView: View {
             comparisonRow(icon: "camera.viewfinder", label: viewModel.scanReceiptLabel, free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
             comparisonRow(icon: "creditcard.fill", label: viewModel.loc("Subscription Tracker"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
             comparisonRow(icon: "heart.fill", label: viewModel.loc("Budget Health"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
+            comparisonRow(icon: "target", label: viewModel.loc("Savings goals"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
+            comparisonRow(icon: "photo.on.rectangle.angled", label: viewModel.loc("Wallpaper themes"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
+            comparisonRow(icon: "square.grid.2x2.fill", label: viewModel.loc("Visible block controls"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
+            comparisonRow(icon: "lock.fill", label: viewModel.loc("No bank login"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
+            comparisonRow(icon: "clock.badge.checkmark", label: viewModel.loc("Start from today"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
             comparisonRow(icon: "clock.arrow.2.circlepath", label: viewModel.autoAnalysisLabel, free: "—", pro: viewModel.loc("Included"))
             comparisonRow(icon: "tag.fill", label: viewModel.loc("Custom Categories"), free: "—", pro: viewModel.loc("Included"))
             comparisonRow(icon: "chart.pie.fill", label: viewModel.loc("Visual Pie Charts"), free: "—", pro: viewModel.loc("Included"))
@@ -268,7 +316,7 @@ struct UpgradeView: View {
     private func comparisonRow(icon: String, label: String, free: String, pro: String) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: icon).font(.caption2).foregroundStyle(.secondary).frame(width: 16)
+                Image(systemName: icon).font(.caption2).foregroundStyle(.yellow).frame(width: 16)
                 Text(label)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)

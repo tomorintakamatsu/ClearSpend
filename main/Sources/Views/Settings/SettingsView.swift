@@ -7,6 +7,10 @@ struct WallpaperCropSource: Identifiable {
     let id = UUID()
     let imageData: Data
     let image: UIImage
+    var updatesCurrentProfile = false
+    var initialZoomPercent: Double = 24
+    var initialHorizontalFrame: Double = 50
+    var initialVerticalFrame: Double = 50
 }
 
 struct WallpaperCropResult {
@@ -16,27 +20,45 @@ struct WallpaperCropResult {
     let verticalFrame: Double
 }
 
+struct WallpaperActionButton: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let foreground: Color
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(foreground)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(tint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
 private enum SettingsChunk: String, Hashable {
     case visibleBlocks
     case wallpaper
-    case appearance
     case pro
     case budget
+    case goalQuickAdd
     case preferences
     case analysis
     case data
-    case account
     case developer
     case legal
 }
 
 struct SettingsView: View {
     @Environment(AppViewModel.self) private var viewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var exportItem: ExportShareItem?
     @State private var showCSVImport = false
     @State private var showResetConfirm = false
     @State private var importResult: (success: Bool, count: Int)?
     @State private var exportSuccess = false
+    @State private var isExporting = false
     @State private var exportFileName = "pennylet_export"
     @State private var showFileNamePrompt = false
     @State private var pendingResetAfterExport = false
@@ -46,19 +68,29 @@ struct SettingsView: View {
     @State private var showDeveloperUnlockAlert = false
     @State private var showUpgrade = false
     @State private var selectedWallpaper: PhotosPickerItem?
+    @State private var showWallpaperPicker = false
     @State private var isAnalyzingWallpaper = false
     @State private var wallpaperError: String?
     @State private var pendingWallpaperCrop: WallpaperCropSource?
     @State private var profileSaveMessage: String?
     @State private var showProfileNamePrompt = false
     @State private var profileNameText = ""
-    @State private var expandedChunks: Set<SettingsChunk> = [.visibleBlocks, .wallpaper]
+    @State private var goalQuickAddTexts: [String] = []
+    @State private var pendingDeleteWallpaperProfile: WallpaperThemeProfile?
 
     // Editable budget fields
     @State private var incomeText: String = ""
     @State private var essentialsText: String = ""
     @State private var savingsText: String = ""
     @State private var payDayVal: Int = 1
+    @State private var draftPayDayVal: Int = 1
+    @State private var showPayDayPicker = false
+    @State private var currentSpendableText: String = ""
+    @State private var cashOnHandText: String = ""
+    @State private var keepUntouchedText: String = ""
+    @State private var nextIncomeAmountText: String = ""
+    @State private var nextIncomeDateVal: Date = Date()
+    @State private var incomeCadenceVal: String = "monthly"
     @State private var budgetSaveTimer: Task<Void, Never>?
 
     private let currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "HKD", "SGD", "KRW", "BRL"]
@@ -72,26 +104,67 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            visibleBlocksSection
-            wallpaperSection
-            appearanceSection
+            if let importResult {
+                settingsRootSection {
+                    dataFeedbackBanner(importResult)
+                }
+            } else if isExporting {
+                settingsRootSection {
+                    exportBusyBanner
+                }
+            }
+
+            settingsRootSection(viewModel.loc("Money Setup")) {
+                settingsNavigationRow(.budget)
+                settingsNavigationRow(.goalQuickAdd)
+                settingsNavigationRow(.preferences)
+                if viewModel.isPro {
+                    settingsNavigationRow(.analysis)
+                }
+            }
+
+            settingsRootSection(viewModel.loc("Customize")) {
+                settingsNavigationRow(.visibleBlocks)
+                settingsNavigationRow(.wallpaper)
+            }
+
             if !viewModel.isPro {
-                proSection
+                settingsRootSection {
+                    settingsNavigationRow(.pro)
+                }
             }
-            budgetSection
-            preferencesSection
-            analysisSection
-            dataSection
-            accountSection
+
+            settingsRootSection {
+                settingsNavigationRow(.data)
+                settingsNavigationRow(.legal)
+            }
+
             if showDeveloperControls || viewModel.isDeveloperMode {
-                developerSection
+                settingsRootSection {
+                    settingsNavigationRow(.developer)
+                }
             }
-            legalSection
         }
-        .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
+        .navigationDestination(for: SettingsChunk.self) { destination in
+            settingsDestination(destination)
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle(viewModel.settingsTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .font(.body)
+        .tint(viewModel.primaryColor)
         .keyboardDoneButton(viewModel.loc("Done"))
+        .listSectionSpacing(18)
+        .environment(\.defaultMinListRowHeight, 66)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(viewModel.loc("Done")) {
+                    dismiss()
+                }
+                .fontWeight(.semibold)
+            }
+        }
         .sheet(item: $exportItem, onDismiss: {
             exportSuccess = true
         }) { item in
@@ -100,31 +173,19 @@ struct SettingsView: View {
         .alert(viewModel.loc("Export Successful"), isPresented: $exportSuccess) {
             Button(viewModel.loc("OK"), role: .cancel) {
                 if pendingResetAfterExport {
-                    viewModel.restoreDefaults()
+                    resetAfterExport()
                     pendingResetAfterExport = false
                 }
             }
         } message: {
             Text("\(viewModel.loc("File saved as")) \(exportFileName).csv")
         }
-        .alert(importResult?.success == true ? viewModel.loc("Import Successful") : viewModel.loc("Import Failed"), isPresented: Binding(
-            get: { importResult != nil },
-            set: { if !$0 { importResult = nil } }
-        )) {
-            Button(viewModel.loc("OK"), role: .cancel) {}
-        } message: {
-            if let r = importResult, r.success {
-                Text("\(viewModel.loc("Imported")) \(r.count) \(viewModel.loc("transactions successfully."))")
-            } else {
-                Text(viewModel.loc("The file could not be read. Check the format and try again."))
-            }
-        }
         .alert(viewModel.loc("Export & Reset"), isPresented: $showResetConfirm) {
             Button(viewModel.loc("Export CSV & Reset")) { exportAndReset() }
-            Button(viewModel.loc("Reset Without Export"), role: .destructive) { viewModel.restoreDefaults() }
+            Button(viewModel.loc("Reset Without Export"), role: .destructive) { resetAfterExport() }
             Button(viewModel.cancelLabel, role: .cancel) {}
         } message: {
-            Text(viewModel.loc("Save your data as CSV before resetting? All local data will be cleared."))
+            Text(viewModel.loc("Export a CSV first? Reset clears local data."))
         }
         .alert(viewModel.devModeEnabled, isPresented: $showDeveloperUnlockAlert) {
             Button(viewModel.okLabel, role: .cancel) {}
@@ -138,83 +199,371 @@ struct SettingsView: View {
             }
             Button(viewModel.cancelLabel, role: .cancel) {}
         } message: {
-            Text(viewModel.loc("Save the current wallpaper, crop, and appearance settings as a profile."))
+            Text(viewModel.loc("Save this wallpaper as a profile."))
         }
         .sheet(isPresented: $showUpgrade) {
             UpgradeView()
         }
+        .sheet(isPresented: $showPayDayPicker) {
+            paydayPickerSheet
+                .presentationDetents([.height(360)])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $pendingWallpaperCrop) { source in
             WallpaperCropEditor(source: source) { result in
-                Task { await applyWallpaperCrop(result) }
+                Task {
+                    await applyWallpaperCrop(
+                        result,
+                        updatesCurrentProfile: source.updatesCurrentProfile
+                    )
+                }
             }
+        }
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    }
+
+    @ViewBuilder
+    private func settingsDestination(_ destination: SettingsChunk) -> some View {
+        switch destination {
+        case .visibleBlocks:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { visibleBlocksSection }
+        case .wallpaper:
+            settingsDestinationForm(title: settingsTitle(for: destination)) {
+                appearanceSection
+                wallpaperSection
+            }
+        case .pro:
+            UpgradeView()
+        case .budget:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { budgetSection }
+        case .goalQuickAdd:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { goalQuickAddSection }
+        case .preferences:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { preferencesSection }
+        case .analysis:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { analysisSection }
+        case .data:
+            settingsDestinationForm(title: settingsTitle(for: .data)) {
+                dataSection
+                accountSection
+            }
+        case .developer:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { developerSection }
+        case .legal:
+            settingsDestinationForm(title: settingsTitle(for: destination)) { legalSection }
         }
     }
 
-    private var proSection: some View {
-        settingsSection(viewModel.loc("PennyLet Pro"), chunk: .pro) {
+    private func settingsDestinationForm<Content: View>(
+        title: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        Form {
+            content()
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(viewModel.primaryColor)
+        .keyboardDoneButton(viewModel.loc("Done"))
+        .listSectionSpacing(22)
+        .environment(\.defaultMinListRowHeight, 66)
+    }
+
+    private func settingsRootSection<Content: View>(
+        _ title: String? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        Section {
+            content()
+        } header: {
+            if let title {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+            }
+        }
+        .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 2, trailing: 18))
+        .listRowBackground(Color(.secondarySystemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func settingsNavigationRow(_ destination: SettingsChunk) -> some View {
+        if destination == .pro {
             Button {
                 showUpgrade = true
             } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "crown.fill")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.yellow)
-                        .frame(width: 34, height: 34)
-                        .background(.yellow.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(viewModel.loc("PennyLet Pro"))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text(viewModel.upgradeToProLabel)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
+                HStack(spacing: 8) {
+                    settingsNavigationLabel(destination)
+                    Spacer(minLength: 8)
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
             }
             .buttonStyle(.plain)
+        } else {
+            NavigationLink(value: destination) {
+                settingsNavigationLabel(destination)
+            }
+        }
+    }
+
+    private func settingsNavigationLabel(_ destination: SettingsChunk) -> some View {
+            HStack(spacing: 14) {
+                Image(systemName: settingsIcon(for: destination))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(settingsTint(for: destination), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(settingsTitle(for: destination))
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let subtitle = settingsSubtitle(for: destination) {
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.78)
+                    }
+                }
+            }
+            .padding(.vertical, 12)
+    }
+
+    private func settingsTitle(for destination: SettingsChunk) -> String {
+        switch destination {
+        case .visibleBlocks:
+            return viewModel.loc("Visible Blocks")
+        case .wallpaper:
+            return viewModel.loc("Appearance & Wallpaper")
+        case .pro:
+            return viewModel.loc("PennyLet Pro")
+        case .budget:
+            return viewModel.loc("Budget & Payday")
+        case .goalQuickAdd:
+            return viewModel.loc("Goal Quick Add")
+        case .preferences:
+            return viewModel.preferencesSection
+        case .analysis:
+            return viewModel.analysisSectionLabel
+        case .data:
+            return viewModel.dataSectionLabel
+        case .developer:
+            return viewModel.developerToolsLabel
+        case .legal:
+            return viewModel.loc("Legal")
+        }
+    }
+
+    private func settingsSubtitle(for destination: SettingsChunk) -> String? {
+        switch destination {
+        case .visibleBlocks:
+            return viewModel.loc("Choose what appears in each tab.")
+        case .wallpaper:
+            return viewModel.loc("Theme, wallpaper, colors, and card opacity.")
+        case .pro:
+            return viewModel.upgradeToProLabel
+        case .budget:
+            return viewModel.loc("Income, payday, and today's money.")
+        case .goalQuickAdd:
+            return viewModel.loc("Customize goal deposit buttons.")
+        case .preferences:
+            return viewModel.loc("Language and currency.")
+        case .analysis:
+            return viewModel.loc("Automatic AI schedules.")
+        case .data:
+            return viewModel.loc("Import, export, reset, and app version.")
+        case .developer:
+            return viewModel.loc("Developer tools and Pro testing.")
+        case .legal:
+            return viewModel.loc("Privacy policy and terms.")
+        }
+    }
+
+    private func settingsIcon(for destination: SettingsChunk) -> String {
+        switch destination {
+        case .visibleBlocks: return "rectangle.grid.2x2"
+        case .wallpaper: return "paintpalette.fill"
+        case .pro: return "crown.fill"
+        case .budget: return "calendar.badge.clock"
+        case .goalQuickAdd: return "target"
+        case .preferences: return "globe"
+        case .analysis: return "sparkles"
+        case .data: return "externaldrive.fill"
+        case .developer: return "hammer.fill"
+        case .legal: return "doc.text.fill"
+        }
+    }
+
+    private func settingsTint(for destination: SettingsChunk) -> Color {
+        switch destination {
+        case .visibleBlocks: return viewModel.primaryColor
+        case .wallpaper: return Color(.systemPurple)
+        case .pro: return Color(.systemYellow)
+        case .budget: return Color(.systemGreen)
+        case .goalQuickAdd: return Color(.systemIndigo)
+        case .preferences: return Color(.systemTeal)
+        case .analysis: return Color(.systemOrange)
+        case .data: return Color(.systemGray)
+        case .developer: return Color(.systemRed)
+        case .legal: return Color(.systemBrown)
         }
     }
 
     private func settingsSection<Content: View>(
         _ title: String,
-        chunk: SettingsChunk,
+        trailingIcon: String? = nil,
+        trailingAction: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         Section {
-            DisclosureGroup(isExpanded: Binding(
-                get: { expandedChunks.contains(chunk) },
-                set: { isExpanded in
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        if isExpanded {
-                            expandedChunks.insert(chunk)
-                        } else {
-                            expandedChunks.remove(chunk)
-                        }
-                    }
-                    Haptics.selection()
-                }
-            )) {
+            VStack(alignment: .leading, spacing: 0) {
                 content()
-                    .padding(.top, 6)
-            } label: {
+                    .padding(.vertical, 4)
+            }
+        } header: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+                Spacer(minLength: 8)
+                if let trailingIcon, let trailingAction {
+                    Button {
+                        trailingAction()
+                    } label: {
+                        Image(systemName: trailingIcon)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(viewModel.primaryColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 2, trailing: 18))
+        .listRowBackground(Color(.secondarySystemGroupedBackground))
+    }
+
+    private func staticSettingsSection<Content: View>(
+        _ title: String? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
+            .font(.body)
+            .padding(.vertical, 6)
+        } header: {
+            if let title {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+            }
+        }
+        .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 2, trailing: 18))
+        .listRowBackground(Color(.secondarySystemGroupedBackground))
+    }
+
+    private func settingsDivider() -> some View {
+        Divider()
+            .padding(.leading, 0)
+            .opacity(0.55)
+    }
+
+    private func settingsActionLabel(_ title: String, systemImage: String, tint: Color? = nil) -> some View {
+        Label {
+            Text(title)
+                .font(.body.weight(.medium))
+                .foregroundStyle(tint ?? Color.primary)
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(tint ?? viewModel.primaryColor)
+                .frame(width: 24)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 13)
+    }
+
+    private func settingsControlRow<Control: View>(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        tint: Color,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            control()
         }
+        .padding(.vertical, 15)
+    }
+
+    private var exportBusyBanner: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .tint(viewModel.primaryColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.loc("Preparing export..."))
+                    .font(.body.weight(.semibold))
+                Text(viewModel.loc("Preparing your CSV."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func dataFeedbackBanner(_ result: (success: Bool, count: Int)) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(result.success ? Color(.systemGreen) : Color(.systemOrange))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.success ? viewModel.loc("Import Successful") : viewModel.loc("Import Failed"))
+                    .font(.body.weight(.semibold))
+                Text(result.success
+                     ? "\(viewModel.loc("Imported")) \(result.count) \(viewModel.loc("transactions successfully."))"
+                     : viewModel.loc("The file could not be read. Check the format and try again."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
     }
 
     // MARK: - Appearance
 
     private var appearanceSection: some View {
-        settingsSection(viewModel.appearanceSection, chunk: .appearance) {
+        settingsSection(viewModel.appearanceSection) {
             themePicker
             colorModePicker
             fontPicker
@@ -223,52 +572,19 @@ struct SettingsView: View {
     }
 
     private var wallpaperSection: some View {
-        settingsSection(viewModel.loc("Wallpaper Theme"), chunk: .wallpaper) {
+        settingsSection(viewModel.loc("Wallpaper Theme")) {
             wallpaperThemePicker
         }
     }
 
     private var themePicker: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(viewModel.loc("Preset themes"))
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
-                ForEach(AppTheme.allCases, id: \.self) { theme in
-                    Button {
-                        Haptics.selection()
-                        viewModel.selectTheme(theme)
-                        savePreferences()
-                    } label: {
-                        VStack(spacing: 7) {
-                            ZStack {
-                                Circle()
-                                    .fill(theme.primaryColor)
-                                    .frame(width: 34, height: 34)
-                                Circle()
-                                    .fill(theme.accentColor)
-                                    .frame(width: 14, height: 14)
-                                    .offset(x: 11, y: 11)
-                            }
-                            Text(viewModel.loc(theme.label))
-                                .font(.caption2.weight(.semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 68)
-                        .padding(.vertical, 7)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(!viewModel.isUsingCustomThemeColor && viewModel.theme == theme ? viewModel.primaryColor : Color(.separator).opacity(0.12), lineWidth: !viewModel.isUsingCustomThemeColor && viewModel.theme == theme ? 2 : 1)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
+        settingsControlRow(
+            title: viewModel.loc("Custom color"),
+            systemImage: "eyedropper.halffull",
+            tint: viewModel.primaryColor
+        ) {
             ColorPicker(
+                "",
                 selection: Binding(
                     get: { viewModel.customThemeColor },
                     set: {
@@ -277,26 +593,35 @@ struct SettingsView: View {
                     }
                 ),
                 supportsOpacity: false
-            ) {
-                HStack(spacing: 10) {
-                    Image(systemName: "eyedropper.halffull")
-                        .foregroundStyle(viewModel.primaryColor)
-                    Text(viewModel.loc("Custom color"))
-                        .font(.subheadline.weight(.semibold))
-                }
-            }
-            .padding(.vertical, 4)
+            )
+            .labelsHidden()
+            .frame(width: 48, height: 48)
+            .padding(5)
+            .background(Color(.tertiarySystemGroupedBackground), in: Circle())
         }
     }
 
     private var colorModePicker: some View {
-        Picker(viewModel.colorModeLabel, selection: Binding(
-            get: { viewModel.colorMode },
-            set: { viewModel.colorMode = $0; savePreferences() }
-        )) {
-            ForEach(AppColorMode.allCases, id: \.self) { mode in
-                Text(viewModel.loc(mode.label)).tag(mode)
+        settingsControlRow(
+            title: viewModel.colorModeLabel,
+            systemImage: "circle.lefthalf.filled",
+            tint: Color(.systemIndigo)
+        ) {
+            Picker("", selection: Binding(
+                get: { viewModel.colorMode },
+                set: { viewModel.colorMode = $0; savePreferences() }
+            )) {
+                ForEach(AppColorMode.allCases, id: \.self) { mode in
+                    Text(viewModel.loc(mode.label)).tag(mode)
+                }
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.large)
+            .tint(viewModel.primaryColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(.tertiarySystemGroupedBackground), in: Capsule(style: .continuous))
         }
     }
 
@@ -310,12 +635,12 @@ struct SettingsView: View {
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(viewModel.primaryColor)
                     .frame(width: 34, height: 34)
-                    .background(viewModel.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(viewModel.primaryColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(viewModel.loc("Wallpaper Theme"))
                         .font(.subheadline.weight(.semibold))
-                    Text(viewModel.loc("PennyLet reads the main colors from your wallpaper and tints the app automatically."))
+                    Text(viewModel.loc("PennyLet pulls colors from your wallpaper."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -329,22 +654,9 @@ struct SettingsView: View {
             }
 
             if let image = viewModel.wallpaperUIImage {
-                wallpaperFramePreview(image)
+                wallpaperFramePickerPreview(image, pickerTitle: pickerTitle)
 
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(viewModel.loc("Wallpaper colors active"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            paletteDot(viewModel.wallpaperPalette?.primaryColor ?? viewModel.primaryColor)
-                            paletteDot(viewModel.wallpaperPalette?.accentColor ?? viewModel.accentColor)
-                            paletteDot(viewModel.wallpaperPalette?.backgroundColor ?? viewModel.backgroundColor)
-                        }
-                    }
-
-                    Spacer()
-                }
+                wallpaperColorThemeRows
 
                 VStack(spacing: 12) {
                     wallpaperSlider(
@@ -374,13 +686,30 @@ struct SettingsView: View {
 
                 HStack(spacing: 10) {
                     Button {
+                        openCurrentWallpaperCrop()
+                    } label: {
+                        Label(viewModel.loc("Crop Current Wallpaper"), systemImage: "crop")
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    .disabled(viewModel.wallpaperImageData == nil || viewModel.wallpaperUIImage == nil)
+
+                    Button {
                         profileNameText = viewModel.activeWallpaperProfile?.name ?? viewModel.loc("Wallpaper")
                         showProfileNamePrompt = true
                     } label: {
                         Label(viewModel.loc("Save Profile"), systemImage: "checkmark.circle.fill")
                             .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
 
                     if let profileSaveMessage {
                         Text(profileSaveMessage)
@@ -407,31 +736,37 @@ struct SettingsView: View {
             }
 
             VStack(spacing: 10) {
-                PhotosPicker(selection: $selectedWallpaper, matching: .images) {
-                    Label(pickerTitle, systemImage: "photo.badge.plus")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(pickerTint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                if !viewModel.hasWallpaperTheme || viewModel.wallpaperUIImage == nil {
+                    Button {
+                        Haptics.selection()
+                        showWallpaperPicker = true
+                    } label: {
+                        WallpaperActionButton(
+                            title: pickerTitle,
+                            systemImage: "photo.badge.plus",
+                            tint: pickerTint,
+                            foreground: .white
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAnalyzingWallpaper)
                 }
-                .disabled(isAnalyzingWallpaper)
 
                 if viewModel.hasWallpaperTheme {
                     Button(role: .destructive) {
                         Haptics.selection()
                         viewModel.clearWallpaperTheme()
                     } label: {
-                        Label(viewModel.loc("Remove Wallpaper Theme"), systemImage: "trash")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(.systemRed))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemRed).opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color(.systemRed).opacity(0.18), lineWidth: 1)
-                            }
+                        WallpaperActionButton(
+                            title: viewModel.loc("Remove Wallpaper Theme"),
+                            systemImage: "trash",
+                            tint: Color(.systemRed).opacity(0.12),
+                            foreground: Color(.systemRed)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color(.systemRed).opacity(0.18), lineWidth: 1)
+                        }
                     }
                     .buttonStyle(.plain)
                     .disabled(isAnalyzingWallpaper)
@@ -443,16 +778,116 @@ struct SettingsView: View {
             guard let item else { return }
             Task { await importWallpaper(item) }
         }
+        .photosPicker(isPresented: $showWallpaperPicker, selection: $selectedWallpaper, matching: .images)
     }
 
-    private func paletteDot(_ color: Color) -> some View {
-        Circle()
-            .fill(color)
-            .frame(width: 18, height: 18)
-            .overlay {
-                Circle()
-                    .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
+    private var wallpaperColorThemeRows: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            swatchRow(title: viewModel.loc("Wallpaper color themes")) {
+                ForEach(Array(viewModel.wallpaperThemeColorOptions.enumerated()), id: \.offset) { index, color in
+                    paletteButton(
+                        color: color,
+                        isSelected: isWallpaperThemeColorSelected(color, index: index),
+                        label: viewModel.loc("Wallpaper color themes")
+                    ) {
+                        viewModel.selectWallpaperThemeColor(color, usesExtractedPalette: index == 0)
+                    }
+                }
             }
+
+            swatchRow(title: viewModel.loc("Card box color themes")) {
+                ForEach(Array(viewModel.wallpaperCardColorOptions.enumerated()), id: \.offset) { _, color in
+                    paletteButton(
+                        color: color,
+                        isSelected: isWallpaperCardColorSelected(color),
+                        label: viewModel.loc("Card box color themes")
+                    ) {
+                        viewModel.selectWallpaperCardColor(color)
+                    }
+                }
+            }
+        }
+    }
+
+    private func swatchRow<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                content()
+            }
+        }
+    }
+
+    private func paletteButton(
+        color: Color,
+        isSelected: Bool,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            Circle()
+                .fill(color)
+                .frame(width: 28, height: 28)
+                .overlay {
+                    Circle()
+                        .stroke(isSelected ? viewModel.primaryColor : Color(.separator).opacity(0.18), lineWidth: isSelected ? 2.5 : 1)
+                }
+                .overlay {
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func isCustomPaletteColorSelected(_ color: Color) -> Bool {
+        viewModel.isUsingCustomThemeColor && colorHex(viewModel.customThemeColor) == colorHex(color)
+    }
+
+    private func isWallpaperThemeColorSelected(_ color: Color, index: Int) -> Bool {
+        if index == 0 {
+            return viewModel.isUsingWallpaperThemeColor
+        }
+        return isCustomPaletteColorSelected(color)
+    }
+
+    private func isWallpaperCardColorSelected(_ color: Color) -> Bool {
+        viewModel.isUsingWallpaperCardColor && colorHex(viewModel.wallpaperCardColor) == colorHex(color)
+    }
+
+    private func colorHex(_ color: Color) -> String {
+        let uiColor = UIColor(color)
+        guard let converted = uiColor.cgColor.converted(
+            to: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            intent: .defaultIntent,
+            options: nil
+        ),
+              let components = converted.components else {
+            return ""
+        }
+
+        let red = components.indices.contains(0) ? components[0] : 0
+        let green = components.indices.contains(1) ? components[1] : red
+        let blue = components.indices.contains(2) ? components[2] : red
+        return String(
+            format: "%02x%02x%02x",
+            Int((red * 255).rounded()),
+            Int((green * 255).rounded()),
+            Int((blue * 255).rounded())
+        )
     }
 
     private var wallpaperProfileScroller: some View {
@@ -464,24 +899,44 @@ struct SettingsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(viewModel.wallpaperProfiles) { profile in
-                        Button {
-                            Haptics.selection()
-                            viewModel.selectWallpaperProfile(profile)
-                            profileSaveMessage = nil
-                        } label: {
-                            wallpaperProfileCard(profile)
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        wallpaperProfileCard(profile)
+                            .padding(3)
+                            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .onTapGesture {
+                                Haptics.selection()
+                                viewModel.selectWallpaperProfile(profile)
+                                profileSaveMessage = nil
+                            }
+                            .onLongPressGesture(minimumDuration: 0.45) {
+                                Haptics.impact(.medium)
+                                pendingDeleteWallpaperProfile = profile
+                            }
+                            .popover(
+                                isPresented: Binding(
+                                    get: { pendingDeleteWallpaperProfile?.id == profile.id },
+                                    set: { isPresented in
+                                        if !isPresented, pendingDeleteWallpaperProfile?.id == profile.id {
+                                            pendingDeleteWallpaperProfile = nil
+                                        }
+                                    }
+                                ),
+                                attachmentAnchor: .rect(.bounds),
+                                arrowEdge: .bottom
+                            ) {
+                                wallpaperProfileDeletePopover(profile)
+                                    .presentationCompactAdaptation(.popover)
+                            }
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 5)
             }
         }
     }
 
     private func wallpaperProfileCard(_ profile: WallpaperThemeProfile) -> some View {
         let isSelected = profile.id == viewModel.activeWallpaperProfileID
+        let isPendingDelete = profile.id == pendingDeleteWallpaperProfile?.id
 
         return VStack(alignment: .leading, spacing: 6) {
             if let image = viewModel.wallpaperProfileImages[profile.id] {
@@ -511,24 +966,75 @@ struct SettingsView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(isSelected ? viewModel.primaryColor : Color(.separator).opacity(0.14), lineWidth: isSelected ? 2 : 1)
+                .stroke(
+                    isPendingDelete ? Color(.systemRed) : (isSelected ? viewModel.primaryColor : Color(.separator).opacity(0.14)),
+                    lineWidth: isPendingDelete || isSelected ? 2.5 : 1
+                )
         }
-        .scaleEffect(isSelected ? 1 : 0.98)
+        .shadow(color: isPendingDelete ? Color(.systemRed).opacity(0.22) : .clear, radius: 12, y: 5)
+        .scaleEffect(isPendingDelete ? 1.06 : (isSelected ? 1 : 0.98))
+        .animation(.spring(response: 0.24, dampingFraction: 0.78), value: pendingDeleteWallpaperProfile?.id)
     }
 
-    private func wallpaperFramePreview(_ image: UIImage) -> some View {
+    private func wallpaperProfileDeletePopover(_ profile: WallpaperThemeProfile) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.loc("Delete Wallpaper Theme?"))
+                    .font(.headline.weight(.semibold))
+                Text(viewModel.loc("Only this saved wallpaper theme will be deleted."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 10) {
+                Button(viewModel.cancelLabel) {
+                    pendingDeleteWallpaperProfile = nil
+                }
+                .buttonStyle(.bordered)
+
+                Button(role: .destructive) {
+                    Haptics.warning()
+                    pendingDeleteWallpaperProfile = nil
+                    viewModel.deleteWallpaperProfile(profile)
+                } label: {
+                    Label(viewModel.loc("Delete"), systemImage: "trash")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(14)
+        .frame(width: 270)
+    }
+
+    private func wallpaperFramePickerPreview(_ image: UIImage, pickerTitle: String) -> some View {
         HStack {
             Spacer(minLength: 0)
 
-            WallpaperImageSurface(
-                image: image,
-                aspectRatio: phoneAspectRatio,
-                zoomPercent: viewModel.wallpaperZoomPercent,
-                horizontalFrame: viewModel.wallpaperHorizontalFrame,
-                verticalFrame: viewModel.wallpaperVerticalFrame,
-                blurRadius: viewModel.wallpaperBlurRadius,
-                visibility: viewModel.wallpaperVisibilityOpacity
-            )
+            Button {
+                Haptics.selection()
+                showWallpaperPicker = true
+            } label: {
+                wallpaperFramePreview(image, actionTitle: pickerTitle)
+            }
+            .buttonStyle(.plain)
+            .disabled(isAnalyzingWallpaper)
+            .accessibilityLabel(pickerTitle)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func wallpaperFramePreview(_ image: UIImage, actionTitle: String) -> some View {
+        WallpaperImageSurface(
+            image: image,
+            aspectRatio: phoneAspectRatio,
+            zoomPercent: viewModel.wallpaperZoomPercent,
+            horizontalFrame: viewModel.wallpaperHorizontalFrame,
+            verticalFrame: viewModel.wallpaperVerticalFrame,
+            blurRadius: viewModel.wallpaperBlurRadius,
+            visibility: viewModel.wallpaperVisibilityOpacity
+        )
             .overlay {
                 LinearGradient(
                     colors: [Color.black.opacity(0.08), Color.clear, viewModel.primaryColor.opacity(0.10)],
@@ -537,15 +1043,43 @@ struct SettingsView: View {
                 )
             }
             .overlay(alignment: .bottomLeading) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 9) {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color(.secondarySystemGroupedBackground).opacity(viewModel.wallpaperPanelOpacityValue))
+                        .fill(viewModel.cardBoxColor.opacity(0.36 + 0.18 * viewModel.wallpaperPanelOpacityValue))
+                        .background(
+                            Color(.secondarySystemGroupedBackground).opacity(0.46 + 0.20 * viewModel.wallpaperPanelOpacityValue),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(viewModel.cardBoxColor.opacity(0.34), lineWidth: 1)
+                        }
                         .frame(width: 130, height: 34)
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color(.secondarySystemGroupedBackground).opacity(viewModel.wallpaperPanelOpacityValue * 0.82))
+                        .fill(viewModel.cardBoxColor.opacity(0.32 + 0.16 * viewModel.wallpaperPanelOpacityValue))
+                        .background(
+                            Color(.secondarySystemGroupedBackground).opacity(0.42 + 0.18 * viewModel.wallpaperPanelOpacityValue),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(viewModel.cardBoxColor.opacity(0.30), lineWidth: 1)
+                        }
                         .frame(width: 96, height: 24)
+
+                    Label(actionTitle, systemImage: "photo.badge.plus")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: previewPhoneWidth - 28, alignment: .leading)
+                        .background(.black.opacity(0.44), in: Capsule())
+                        .shadow(color: .black.opacity(0.22), radius: 4, y: 2)
                 }
                 .padding(14)
+                .padding(.bottom, 8)
             }
             .frame(width: previewPhoneWidth, height: previewPhoneWidth / phoneAspectRatio)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -554,9 +1088,6 @@ struct SettingsView: View {
                     .stroke(.white.opacity(0.24), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
-
-            Spacer(minLength: 0)
-        }
     }
 
     private var previewPhoneWidth: CGFloat {
@@ -613,144 +1144,617 @@ struct SettingsView: View {
     }
 
     private var fontPicker: some View {
-        Picker(viewModel.fontLabel, selection: Binding(
-            get: { viewModel.font },
-            set: { viewModel.font = $0; savePreferences() }
-        )) {
-            ForEach(AppFont.allCases, id: \.self) { font in
-                Text(viewModel.loc(font.label)).tag(font)
+        settingsControlRow(
+            title: viewModel.fontLabel,
+            systemImage: "textformat.size",
+            tint: Color(.systemPurple)
+        ) {
+            Picker("", selection: Binding(
+                get: { viewModel.font },
+                set: { viewModel.font = $0; savePreferences() }
+            )) {
+                ForEach(AppFont.allCases, id: \.self) { font in
+                    Text(viewModel.loc(font.label)).tag(font)
+                }
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.large)
+            .tint(viewModel.primaryColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(.tertiarySystemGroupedBackground), in: Capsule(style: .continuous))
         }
     }
 
     private var weekStartPicker: some View {
-        Picker(viewModel.weekStartsLabel, selection: Binding(
-            get: { viewModel.currentBudget?.startOfWeek ?? "sunday" },
-            set: { savePreference("start_of_week", $0) }
-        )) {
-            Text(viewModel.sundayLabel).tag("sunday")
-            Text(viewModel.mondayLabel).tag("monday")
+        settingsControlRow(
+            title: viewModel.weekStartsLabel,
+            systemImage: "calendar",
+            tint: Color(.systemTeal)
+        ) {
+            Picker("", selection: Binding(
+                get: { viewModel.currentBudget?.startOfWeek ?? "sunday" },
+                set: { savePreference("start_of_week", $0) }
+            )) {
+                Text(viewModel.sundayLabel).tag("sunday")
+                Text(viewModel.mondayLabel).tag("monday")
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.large)
+            .tint(viewModel.primaryColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(.tertiarySystemGroupedBackground), in: Capsule(style: .continuous))
         }
     }
 
     // MARK: - Visible Blocks
 
     private var visibleBlocksSection: some View {
-        settingsSection(viewModel.loc("Visible Blocks"), chunk: .visibleBlocks) {
-            DisclosureGroup(viewModel.homeTab) {
-                blockToggle(.homeSafeToSpend, title: viewModel.loc("Safe to Spend Today"))
-                blockToggle(.homeMonthlyPulse, title: viewModel.loc("Monthly pulse"))
-                blockToggle(.homeTopCategories, title: viewModel.loc("Top Categories"))
-                blockToggle(.homeRecentActivity, title: viewModel.loc("Recent Activity"))
+        Group {
+            staticSettingsSection {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(viewModel.loc("Visible Blocks"))
+                            .font(.headline.weight(.semibold))
+                        Text(viewModel.loc("Drag to reorder. Tap plus or check to show or hide."))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    EditButton()
+                        .font(.subheadline.weight(.semibold))
+                }
             }
 
-            DisclosureGroup(viewModel.activityTab) {
-                blockToggle(.activityFilter, title: viewModel.loc("Filter"))
-                blockToggle(.activitySummary, title: viewModel.loc("Activity Summary"))
+            Section {
+                ForEach(viewModel.homeDisplayBlockOrder, id: \.self) { block in
+                    homeBlockControlRow(block)
+                }
+                .onMove(perform: viewModel.moveHomeBlock)
+            } header: {
+                Text(viewModel.homeTab)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+            }
+            .listRowInsets(EdgeInsets(top: 2, leading: 18, bottom: 2, trailing: 18))
+            .listRowBackground(Color(.secondarySystemGroupedBackground))
+
+            staticSettingsSection {
+                Button {
+                    Haptics.selection()
+                    viewModel.resetHomeBlockLayout()
+                } label: {
+                    settingsActionLabel(viewModel.loc("Reset Home Layout"), systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.plain)
             }
 
-            DisclosureGroup(viewModel.goalsTab) {
-                blockToggle(.goalsOverview, title: viewModel.loc("Savings direction"))
+            staticSettingsSection(viewModel.activityTab) {
+                blockControlRow(.activityFilter, title: viewModel.loc("Filter"))
+                settingsDivider()
+                blockControlRow(.activitySummary, title: viewModel.loc("Activity Summary"))
             }
-
-            DisclosureGroup(viewModel.aiTab) {
-                blockToggle(.aiIntro, title: viewModel.loc("PennyLet Intelligence"))
-                blockToggle(.aiUsage, title: viewModel.loc("Usage"))
-                blockToggle(.aiHistory, title: viewModel.loc("AI History"))
+            staticSettingsSection(viewModel.goalsTab) {
+                blockControlRow(.goalsOverview, title: viewModel.loc("Savings direction"))
             }
-
-            DisclosureGroup(viewModel.moreTab) {
-                blockToggle(.moreOverview, title: viewModel.loc("Money cockpit"))
-                blockToggle(.subscriptionsOverview, title: viewModel.loc("Active Subscriptions"))
-                blockToggle(.subscriptionsSuggestions, title: viewModel.loc("Suggested subscriptions"))
-                blockToggle(.budgetOverview, title: viewModel.loc("Budget Overview"))
-                blockToggle(.budgetCategories, title: viewModel.loc("Spending by Category"))
-                blockToggle(.budgetIncomeChart, title: viewModel.loc("Income vs Spending"))
-                blockToggle(.budgetKeyNumbers, title: viewModel.loc("Key numbers"))
+            staticSettingsSection(viewModel.aiTab) {
+                blockControlRow(.aiIntro, title: viewModel.loc("PennyLet Intelligence"))
+                settingsDivider()
+                blockControlRow(.aiUsage, title: viewModel.loc("Usage"))
+                settingsDivider()
+                blockControlRow(.aiHistory, title: viewModel.loc("AI History"))
             }
-
-            Button {
-                viewModel.resetVisibleBlocks()
-            } label: {
-                Label(viewModel.loc("Reset Visible Blocks"), systemImage: "arrow.counterclockwise")
+            staticSettingsSection(viewModel.moreTab) {
+                blockControlRow(.moreOverview, title: viewModel.loc("Money cockpit"))
+                settingsDivider()
+                blockControlRow(.subscriptionsOverview, title: viewModel.loc("Active Subscriptions"))
+                settingsDivider()
+                blockControlRow(.subscriptionsSuggestions, title: viewModel.loc("Suggested subscriptions"))
+                settingsDivider()
+                blockControlRow(.budgetOverview, title: viewModel.loc("Budget Overview"))
+                settingsDivider()
+                blockControlRow(.budgetCategories, title: viewModel.loc("Spending by Category"))
+                settingsDivider()
+                blockControlRow(.budgetIncomeChart, title: viewModel.loc("Income vs Spending"))
+                settingsDivider()
+                blockControlRow(.budgetKeyNumbers, title: viewModel.loc("Key numbers"))
             }
         }
     }
 
-    private func blockToggle(_ block: AppDisplayBlock, title: String) -> some View {
-        Toggle(title, isOn: Binding(
-            get: { viewModel.isBlockVisible(block) },
-            set: { viewModel.setBlock(block, visible: $0) }
-        ))
+    private func homeBlockControlRow(_ block: AppDisplayBlock) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 22)
+
+            Image(systemName: blockIcon(block))
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(viewModel.primaryColor.opacity(viewModel.isBlockVisible(block) ? 0.95 : 0.38), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            Text(blockTitle(block))
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+
+            Spacer()
+
+            Button {
+                Haptics.selection()
+                viewModel.setBlock(block, visible: !viewModel.isBlockVisible(block))
+            } label: {
+                Image(systemName: viewModel.isBlockVisible(block) ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(viewModel.isBlockVisible(block) ? viewModel.primaryColor : viewModel.primaryColor.opacity(0.72))
+                    .frame(width: 42, height: 42)
+                    .background(Color(.tertiarySystemGroupedBackground), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.isBlockVisible(block) ? viewModel.loc("Hide") : viewModel.loc("Show"))
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func blockControlRow(_ block: AppDisplayBlock, title: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: blockIcon(block))
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(viewModel.primaryColor.opacity(viewModel.isBlockVisible(block) ? 0.95 : 0.38), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+            Spacer()
+            Button {
+                Haptics.selection()
+                viewModel.setBlock(block, visible: !viewModel.isBlockVisible(block))
+            } label: {
+                Image(systemName: viewModel.isBlockVisible(block) ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(viewModel.isBlockVisible(block) ? viewModel.primaryColor : viewModel.primaryColor.opacity(0.72))
+                    .frame(width: 42, height: 42)
+                    .background(Color(.tertiarySystemGroupedBackground), in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func blockTitle(_ block: AppDisplayBlock) -> String {
+        switch block {
+        case .homeSafeToSpend: return viewModel.loc("Safe Until Payday")
+        case .homeMonthlyPulse: return viewModel.loc("Monthly pulse")
+        case .homeReviewQueue: return viewModel.loc("Review Queue")
+        case .homeWatchlists: return viewModel.loc("Watchlists")
+        case .homeTopCategories: return viewModel.loc("Top Categories")
+        case .homeRecentActivity: return viewModel.loc("Recent Activity")
+        default: return block.rawValue
+        }
+    }
+
+    private func blockIcon(_ block: AppDisplayBlock) -> String {
+        switch block {
+        case .homeSafeToSpend: return "calendar.badge.clock"
+        case .homeMonthlyPulse: return "chart.bar.fill"
+        case .homeReviewQueue: return "checklist.checked"
+        case .homeWatchlists: return "eye.circle.fill"
+        case .homeTopCategories, .budgetCategories: return "tag.fill"
+        case .homeRecentActivity: return "clock.arrow.circlepath"
+        case .activityFilter: return "line.3.horizontal.decrease.circle"
+        case .activitySummary: return "sum"
+        case .goalsOverview: return "target"
+        case .aiIntro: return "sparkles"
+        case .aiUsage: return "gauge.with.dots.needle.67percent"
+        case .aiHistory: return "clock.fill"
+        case .moreOverview: return "square.grid.2x2"
+        case .subscriptionsOverview: return "repeat.circle.fill"
+        case .subscriptionsSuggestions: return "sparkle.magnifyingglass"
+        case .budgetOverview: return "chart.pie.fill"
+        case .budgetIncomeChart: return "arrow.up.arrow.down.circle.fill"
+        case .budgetKeyNumbers: return "number.circle.fill"
+        }
     }
 
     // MARK: - Budget
 
     private var budgetSection: some View {
-        settingsSection(viewModel.budgetSection, chunk: .budget) {
-            HStack {
-                Text(viewModel.currency == "JPY" ? "¥" : "$").foregroundStyle(.secondary)
-                TextField(viewModel.monthlyIncomeLabel, text: $incomeText)
-                    .keyboardType(.decimalPad)
-            }
-            .onChange(of: incomeText) { _, _ in scheduleBudgetSave() }
+        settingsSection(viewModel.budgetSection) {
+            VStack(alignment: .leading, spacing: 0) {
+                settingsGroupCaption(viewModel.loc("Monthly plan"))
+                budgetAmountRow(
+                    title: viewModel.loc("Monthly income"),
+                    description: viewModel.loc("Usual take-home pay each month."),
+                    text: $incomeText
+                )
+                settingsDivider()
+                budgetAmountRow(
+                    title: viewModel.loc("Fixed bills"),
+                    description: viewModel.loc("Rent, utilities, subscriptions, and must-pay costs."),
+                    text: $essentialsText
+                )
+                settingsDivider()
+                budgetAmountRow(
+                    title: viewModel.loc("Money to save"),
+                    description: viewModel.loc("Money to protect each month."),
+                    text: $savingsText
+                )
 
-            HStack {
-                Text(viewModel.currency == "JPY" ? "¥" : "$").foregroundStyle(.secondary)
-                TextField(viewModel.essentialsLabel, text: $essentialsText)
-                    .keyboardType(.decimalPad)
-            }
-            .onChange(of: essentialsText) { _, _ in scheduleBudgetSave() }
+                settingsGroupCaption(viewModel.loc("Pay schedule"))
+                    .padding(.top, 14)
+                paydaySelectionRow
+                settingsDivider()
+                payRhythmPicker
 
-            HStack {
-                Text(viewModel.currency == "JPY" ? "¥" : "$").foregroundStyle(.secondary)
-                TextField(viewModel.savingsGoalLabel, text: $savingsText)
-                    .keyboardType(.decimalPad)
+                settingsGroupCaption(viewModel.loc("Today snapshot"))
+                    .padding(.top, 14)
+                budgetAmountRow(
+                    title: viewModel.loc("Today's money"),
+                    description: viewModel.loc("Money in your bank/checking today."),
+                    text: $currentSpendableText
+                )
+                settingsDivider()
+                budgetAmountRow(
+                    title: viewModel.loc("Cash"),
+                    description: viewModel.loc("Cash you want PennyLet to count."),
+                    text: $cashOnHandText
+                )
+                settingsDivider()
+                budgetAmountRow(
+                    title: viewModel.loc("Keep untouched"),
+                    description: viewModel.loc("Savings or buffer money to protect."),
+                    text: $keepUntouchedText
+                )
+                settingsDivider()
+                budgetAmountRow(
+                    title: viewModel.loc("Next paycheck"),
+                    description: viewModel.loc("Leave blank to use monthly income."),
+                    text: $nextIncomeAmountText
+                )
             }
-            .onChange(of: savingsText) { _, _ in scheduleBudgetSave() }
-
-            Stepper("\(viewModel.payDayLabel): \(payDayVal)", value: $payDayVal, in: 1...31)
-                .onChange(of: payDayVal) { _, _ in saveBudgetNow() }
         }
         .onAppear {
             if let budget = viewModel.currentBudget {
-                incomeText = String(format: "%.0f", budget.monthlyIncome)
-                essentialsText = budget.monthlyEssentials.map { String(format: "%.0f", $0) } ?? ""
-                savingsText = budget.monthlySavingsGoal.map { String(format: "%.0f", $0) } ?? ""
-                payDayVal = budget.payDay ?? 1
+                populateBudgetFields(from: budget)
             }
         }
         .onChange(of: viewModel.currentBudget?.id) { _, _ in
             if let budget = viewModel.currentBudget {
-                incomeText = String(format: "%.0f", budget.monthlyIncome)
-                essentialsText = budget.monthlyEssentials.map { String(format: "%.0f", $0) } ?? ""
-                savingsText = budget.monthlySavingsGoal.map { String(format: "%.0f", $0) } ?? ""
-                payDayVal = budget.payDay ?? 1
+                populateBudgetFields(from: budget)
             }
         }
+    }
+
+    private func settingsGroupCaption(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .padding(.bottom, 6)
+            .padding(.top, 2)
+    }
+
+    private func budgetAmountRow(
+        title: String,
+        description: String,
+        text: Binding<String>
+    ) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 10) {
+                Text(currencyInputLabel)
+                    .font(.body.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                TextField(title, text: text)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .font(.headline.weight(.semibold).monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .frame(width: 110, alignment: .trailing)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .padding(.vertical, 13)
+        .onChange(of: text.wrappedValue) { _, _ in scheduleBudgetSave() }
+    }
+
+    private var currencyInputLabel: String {
+        CurrencyFormat.currencySymbol(for: viewModel.currency)
+    }
+
+    private var paydaySelectionRow: some View {
+        Button {
+            draftPayDayVal = payDayVal
+            showPayDayPicker = true
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.loc("Payday"))
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(viewModel.loc("Choose the day of the month your pay usually arrives."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 6) {
+                    Text("\(payDayVal)")
+                        .font(.body.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.primary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
+            }
+            .padding(.vertical, 13)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var payRhythmPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(viewModel.loc("Pay rhythm"))
+                .font(.body)
+                .foregroundStyle(.primary)
+            Picker(viewModel.loc("Pay rhythm"), selection: $incomeCadenceVal) {
+                ForEach(["weekly", "biweekly", "semimonthly", "monthly"], id: \.self) { cadence in
+                    Text(viewModel.loc(cadence)).tag(cadence)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: incomeCadenceVal) { _, _ in saveBudgetNow() }
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var paydayPickerSheet: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                Text(viewModel.loc("Choose payday"))
+                    .font(.headline.weight(.semibold))
+                    .padding(.top, 6)
+
+                Picker(viewModel.loc("Payday"), selection: $draftPayDayVal) {
+                    ForEach(1...31, id: \.self) { day in
+                        Text("\(day)").tag(day)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+                .clipped()
+            }
+            .padding(.horizontal, 20)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(viewModel.cancelLabel) {
+                        showPayDayPicker = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(viewModel.loc("Done")) {
+                        commitPaydaySelection()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    private func commitPaydaySelection() {
+        payDayVal = draftPayDayVal
+        nextIncomeDateVal = nextPaydayDate(day: draftPayDayVal)
+        saveBudgetNow()
+        showPayDayPicker = false
+        Haptics.selection()
+    }
+
+    private func nextPaydayDate(day: Int, from today: Date = Date(), calendar: Calendar = .current) -> Date {
+        let safeDay = min(max(day, 1), 31)
+        var components = calendar.dateComponents([.year, .month], from: today)
+        let daysInCurrentMonth = calendar.range(of: .day, in: .month, for: today)?.count ?? 30
+        components.day = min(safeDay, daysInCurrentMonth)
+
+        if let candidate = calendar.date(from: components), candidate >= calendar.startOfDay(for: today) {
+            return candidate
+        }
+
+        guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: today) else {
+            return today
+        }
+        var nextComponents = calendar.dateComponents([.year, .month], from: nextMonth)
+        let nextDays = calendar.range(of: .day, in: .month, for: nextMonth)?.count ?? 30
+        nextComponents.day = min(safeDay, nextDays)
+        return calendar.date(from: nextComponents) ?? today
+    }
+
+    private func populateBudgetFields(from budget: Budget) {
+        incomeText = String(format: "%.0f", budget.monthlyIncome)
+        essentialsText = budget.monthlyEssentials.map { String(format: "%.0f", $0) } ?? ""
+        savingsText = budget.monthlySavingsGoal.map { String(format: "%.0f", $0) } ?? ""
+        payDayVal = budget.payDay ?? 1
+        draftPayDayVal = budget.payDay ?? 1
+        currentSpendableText = budget.currentSpendableBalance.map { String(format: "%.0f", $0) } ?? ""
+        cashOnHandText = budget.cashOnHand.map { String(format: "%.0f", $0) } ?? ""
+        keepUntouchedText = budget.moneyToKeepUntouched.map { String(format: "%.0f", $0) } ?? ""
+        nextIncomeAmountText = budget.nextIncomeAmount.map { String(format: "%.0f", $0) } ?? ""
+        nextIncomeDateVal = budget.nextIncomeDate.flatMap(AppViewModel.dateFromStoredString) ?? Date()
+        incomeCadenceVal = budget.incomeCadence ?? "monthly"
+    }
+
+    private var goalQuickAddSection: some View {
+        settingsSection(viewModel.loc("Goal Quick Add")) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(viewModel.loc("Set the four amounts that appear on goal cards."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(0..<4, id: \.self) { index in
+                    goalQuickAddRow(index: index)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .onAppear {
+            syncGoalQuickAddTexts()
+        }
+    }
+
+    private func goalQuickAddRow(index: Int) -> some View {
+        HStack(spacing: 14) {
+            Text("\(index + 1)")
+                .font(.body.weight(.bold).monospacedDigit())
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(Color(.systemIndigo), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(viewModel.loc("Quick amount")) \(index + 1)")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(viewModel.loc("Goal deposit shortcut"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Text(currencyInputLabel)
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                TextField(
+                    viewModel.amountLabel,
+                    text: Binding(
+                        get: { goalQuickAddText(at: index) },
+                        set: { updateGoalQuickAddText($0, at: index) }
+                    )
+                )
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .font(.headline.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .frame(width: 90)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .padding(12)
+        .background(Color(.tertiarySystemGroupedBackground).opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func goalQuickAddText(at index: Int) -> String {
+        if goalQuickAddTexts.indices.contains(index) {
+            return goalQuickAddTexts[index]
+        }
+        if viewModel.goalQuickAddAmounts.indices.contains(index) {
+            return cleanAmountText(viewModel.goalQuickAddAmounts[index])
+        }
+        return ""
+    }
+
+    private func updateGoalQuickAddText(_ value: String, at index: Int) {
+        while goalQuickAddTexts.count < 4 {
+            let fallbackIndex = goalQuickAddTexts.count
+            let fallback = viewModel.goalQuickAddAmounts.indices.contains(fallbackIndex)
+                ? viewModel.goalQuickAddAmounts[fallbackIndex]
+                : 0
+            goalQuickAddTexts.append(cleanAmountText(fallback))
+        }
+        goalQuickAddTexts[index] = value
+        if let amount = CurrencyFormat.parseInput(value), amount > 0 {
+            viewModel.setGoalQuickAddAmount(at: index, amount: amount)
+        }
+    }
+
+    private func syncGoalQuickAddTexts() {
+        goalQuickAddTexts = viewModel.goalQuickAddAmounts.map(cleanAmountText)
+    }
+
+    private func cleanAmountText(_ amount: Double) -> String {
+        amount.rounded() == amount ? String(format: "%.0f", amount) : String(amount)
     }
 
     // MARK: - Preferences
 
     private var preferencesSection: some View {
-        settingsSection(viewModel.preferencesSection, chunk: .preferences) {
-            Picker(viewModel.currencyLabel, selection: Binding(
-                get: { viewModel.currency },
-                set: { viewModel.currency = $0; savePreferences() }
-            )) {
-                ForEach(currencies, id: \.self) { c in
-                    Text("\(c) (\(CurrencyFormat.currencySymbol(for: c)))").tag(c)
-                }
+        settingsSection(viewModel.preferencesSection) {
+            settingsControlRow(
+                title: viewModel.currencyLabel,
+                systemImage: "banknote.fill",
+                tint: Color(.systemGreen)
+            ) {
+                Picker("", selection: Binding(
+                    get: { viewModel.currency },
+                    set: { viewModel.currency = $0; savePreferences() }
+                )) {
+                    ForEach(currencies, id: \.self) { c in
+                        Text("\(c) \(CurrencyFormat.currencySymbol(for: c))").tag(c)
+                    }
             }
-            Picker(viewModel.languageLabel, selection: Binding(
-                get: { viewModel.language },
-                set: { viewModel.language = $0; savePreferences() }
-            )) {
-                ForEach(languages, id: \.self) { code in
-                    Text(viewModel.languageDisplayName(for: code)).tag(code)
-                }
-            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.large)
+            .tint(viewModel.primaryColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(.tertiarySystemGroupedBackground), in: Capsule(style: .continuous))
         }
+        settingsDivider()
+        settingsControlRow(
+                title: viewModel.languageLabel,
+                systemImage: "globe",
+                tint: Color(.systemTeal)
+            ) {
+                Picker("", selection: Binding(
+                    get: { viewModel.language },
+                    set: { viewModel.language = $0; savePreferences() }
+                )) {
+                    ForEach(languages, id: \.self) { code in
+                        Text(viewModel.languageDisplayName(for: code)).tag(code)
+                    }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.large)
+            .tint(viewModel.primaryColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(.tertiarySystemGroupedBackground), in: Capsule(style: .continuous))
+        }
+    }
     }
 
     // MARK: - Analysis Scheduling
@@ -764,28 +1768,30 @@ struct SettingsView: View {
                 .alert(viewModel.loc("Auto Analysis Help"), isPresented: $showAutoAnalysisHelp) {
                     Button(viewModel.loc("OK"), role: .cancel) {}
                 } message: {
-                    Text(viewModel.loc("Auto Analysis automatically generates daily, weekly, and monthly AI spending insights at your scheduled times. Enable it and set your preferred times below."))
+                    Text(viewModel.loc("Auto Analysis runs at the times you choose."))
                 }
         }
     }
 
     private var analysisSettingsSection: some View {
-        settingsSection(viewModel.analysisSectionLabel, chunk: .analysis) {
-            HStack {
-                Text(viewModel.autoAnalysisLabel)
-                Spacer()
+        settingsSection(viewModel.analysisSectionLabel) {
+            HStack(spacing: 12) {
+                Toggle(viewModel.autoAnalysisLabel, isOn: Binding(
+                    get: { viewModel.currentBudget?.autoAnalysisEnabled ?? false },
+                    set: { savePreference("auto_analysis_enabled", $0) }
+                ))
+
                 Button {
                     showAutoAnalysisHelp = true
                 } label: {
                     Image(systemName: "questionmark.circle.fill")
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(viewModel.primaryColor)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.loc("Auto Analysis Help"))
             }
-            Toggle(viewModel.autoAnalysisLabel, isOn: Binding(
-                get: { viewModel.currentBudget?.autoAnalysisEnabled ?? false },
-                set: { savePreference("auto_analysis_enabled", $0) }
-            ))
+
             if viewModel.currentBudget?.autoAnalysisEnabled == true {
                 HStack {
                     Text(viewModel.dailyTabLabel).foregroundStyle(.secondary)
@@ -824,18 +1830,26 @@ struct SettingsView: View {
     // MARK: - Data
 
     private var dataSection: some View {
-        settingsSection(viewModel.dataSectionLabel, chunk: .data) {
+        staticSettingsSection(viewModel.dataSectionLabel) {
             Button {
                 pendingResetAfterExport = false
                 showFileNamePrompt = true
             } label: {
-                Label(viewModel.exportCSVLabel, systemImage: "square.and.arrow.up")
+                settingsActionLabel(isExporting ? viewModel.loc("Preparing export...") : viewModel.exportCSVLabel, systemImage: "square.and.arrow.up")
             }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
+            settingsDivider()
+
             Button {
                 showCSVImport = true
             } label: {
-                Label(viewModel.loc("Import CSV"), systemImage: "square.and.arrow.down")
+                settingsActionLabel(viewModel.loc("Import CSV"), systemImage: "square.and.arrow.down")
             }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
+            settingsDivider()
+
             Button {
                 Task {
                     await viewModel.refreshExchangeRates()
@@ -844,11 +1858,12 @@ struct SettingsView: View {
                     ratesRefreshed = false
                 }
             } label: {
-                Label(
+                settingsActionLabel(
                     ratesRefreshed ? viewModel.loc("Exchange rates updated") : viewModel.loc("Refresh Exchange Rates"),
                     systemImage: ratesRefreshed ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath"
                 )
             }
+            .buttonStyle(.plain)
             .disabled(ratesRefreshed)
         }
         .fileImporter(isPresented: $showCSVImport, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
@@ -866,29 +1881,33 @@ struct SettingsView: View {
     // MARK: - Account
 
     private var accountSection: some View {
-        settingsSection(viewModel.accountSectionLabel, chunk: .account) {
+        staticSettingsSection {
             Button {
                 registerDeveloperTap()
             } label: {
-                HStack {
-                    Label(viewModel.appVersionLabel, systemImage: "info.circle")
+                HStack(spacing: 12) {
+                    settingsActionLabel(viewModel.appVersionLabel, systemImage: "info.circle")
                     Spacer()
                     Text(appVersionString)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)
+            settingsDivider()
 
             Button(role: .destructive) {
                 showResetConfirm = true
             } label: {
-                Label(viewModel.loc("Export & Reset"), systemImage: "arrow.counterclockwise")
+                settingsActionLabel(isExporting ? viewModel.loc("Preparing export...") : viewModel.loc("Export & Reset"), systemImage: "arrow.counterclockwise", tint: Color(.systemRed))
             }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
         }
     }
 
     private var developerSection: some View {
-        settingsSection(viewModel.developerToolsLabel, chunk: .developer) {
+        settingsSection(viewModel.developerToolsLabel) {
             Toggle(isOn: Binding(
                 get: { viewModel.isDeveloperMode },
                 set: { viewModel.setDeveloperMode($0) }
@@ -903,13 +1922,17 @@ struct SettingsView: View {
     }
 
     private var legalSection: some View {
-        settingsSection(viewModel.loc("Legal"), chunk: .legal) {
+        staticSettingsSection(viewModel.loc("Legal")) {
             Link(destination: URL(string: "https://tomorintakamatsu.github.io/pennylet-privacy/privacy-policy.pdf")!) {
-                Label(viewModel.loc("Privacy Policy"), systemImage: "hand.raised.fill")
+                settingsActionLabel(viewModel.loc("Privacy Policy"), systemImage: "hand.raised.fill")
             }
+            .buttonStyle(.plain)
+            settingsDivider()
+
             Link(destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!) {
-                Label(viewModel.loc("Terms of Use (EULA)"), systemImage: "doc.text.fill")
+                settingsActionLabel(viewModel.loc("Terms of Use (EULA)"), systemImage: "doc.text.fill")
             }
+            .buttonStyle(.plain)
         }
     }
 
@@ -954,12 +1977,23 @@ struct SettingsView: View {
     private func saveBudgetNow() {
         guard let income = CurrencyFormat.parseInput(incomeText), income > 0,
               viewModel.currentBudget != nil else { return }
+        let essentials = CurrencyFormat.parseInput(essentialsText) ?? 0
+        let savings = CurrencyFormat.parseInput(savingsText) ?? 0
         // Only update the budget fields that changed; updateBudgetLocally preserves nil fields
         viewModel.updateBudgetLocally(BudgetData(
             monthlyIncome: income,
-            monthlyEssentials: CurrencyFormat.parseInput(essentialsText),
-            monthlySavingsGoal: CurrencyFormat.parseInput(savingsText),
-            payDay: payDayVal
+            monthlyEssentials: essentials,
+            monthlySavingsGoal: savings,
+            payDay: payDayVal,
+            startDate: viewModel.currentBudget?.startDate ?? AppViewModel.storedDateString(from: Date()),
+            currentSpendableBalance: CurrencyFormat.parseInput(currentSpendableText) ?? 0,
+            cashOnHand: CurrencyFormat.parseInput(cashOnHandText) ?? 0,
+            moneyToKeepUntouched: CurrencyFormat.parseInput(keepUntouchedText) ?? 0,
+            billsDueBeforeNextIncome: essentials,
+            savingsDueBeforeNextIncome: savings,
+            nextIncomeDate: AppViewModel.storedDateString(from: nextIncomeDateVal),
+            nextIncomeAmount: CurrencyFormat.parseInput(nextIncomeAmountText) ?? income,
+            incomeCadence: incomeCadenceVal
         ))
     }
 
@@ -1003,10 +2037,37 @@ struct SettingsView: View {
         }
     }
 
-    private func applyWallpaperCrop(_ result: WallpaperCropResult) async {
+    private func openCurrentWallpaperCrop() {
+        guard let data = viewModel.wallpaperImageData,
+              let image = viewModel.wallpaperUIImage else { return }
+        pendingWallpaperCrop = WallpaperCropSource(
+            imageData: data,
+            image: image,
+            updatesCurrentProfile: true,
+            initialZoomPercent: viewModel.wallpaperZoomPercent,
+            initialHorizontalFrame: viewModel.wallpaperHorizontalFrame,
+            initialVerticalFrame: viewModel.wallpaperVerticalFrame
+        )
+    }
+
+    private func applyWallpaperCrop(
+        _ result: WallpaperCropResult,
+        updatesCurrentProfile: Bool
+    ) async {
         isAnalyzingWallpaper = true
         wallpaperError = nil
         defer { isAnalyzingWallpaper = false }
+
+        if updatesCurrentProfile {
+            viewModel.updateCurrentWallpaperCrop(
+                zoomPercent: result.zoomPercent,
+                horizontalFrame: result.horizontalFrame,
+                verticalFrame: result.verticalFrame
+            )
+            profileSaveMessage = viewModel.loc("Profile saved")
+            Haptics.success()
+            return
+        }
 
         do {
             try await viewModel.importWallpaperTheme(
@@ -1052,18 +2113,47 @@ struct SettingsView: View {
     }
 
     private func exportCSV() {
-        var csv = viewModel.loc("Date,Type,Category,Amount,Note,Merchant,OriginalCurrency,OriginalAmount,ExchangeRate") + "\n"
-        for tx in viewModel.transactions {
-            let note = (tx.note ?? "").replacingOccurrences(of: "\"", with: "\"\"")
-            let merchant = (tx.merchant ?? "").replacingOccurrences(of: "\"", with: "\"\"")
-            let origCur = tx.originalCurrency ?? ""
-            let origAmt = tx.originalAmount.map { String(format: "%.2f", $0) } ?? ""
-            let xrate = tx.exchangeRate.map { String(format: "%.4f", $0) } ?? ""
-            csv += "\(tx.date),\(tx.type.rawValue),\(tx.category ?? ""),\(tx.amount),\"\(note)\",\"\(merchant)\",\(origCur),\(origAmt),\(xrate)\n"
+        guard !isExporting else { return }
+        isExporting = true
+        let transactions = viewModel.transactions
+        let header = viewModel.loc("Date,Type,Category,Amount,Note,Merchant,OriginalCurrency,OriginalAmount,ExchangeRate")
+        let fileName = sanitizedExportFileName(exportFileName)
+        exportFileName = fileName
+
+        Task {
+            await Task.yield()
+            var csv = header + "\n"
+            for tx in transactions {
+                let note = (tx.note ?? "").replacingOccurrences(of: "\"", with: "\"\"")
+                let merchant = (tx.merchant ?? "").replacingOccurrences(of: "\"", with: "\"\"")
+                let category = (tx.category ?? "").replacingOccurrences(of: "\"", with: "\"\"")
+                let origCur = tx.originalCurrency ?? ""
+                let origAmt = tx.originalAmount.map { String(format: "%.2f", $0) } ?? ""
+                let xrate = tx.exchangeRate.map { String(format: "%.4f", $0) } ?? ""
+                csv += "\(tx.date),\(tx.type.rawValue),\"\(category)\",\(tx.amount),\"\(note)\",\"\(merchant)\",\(origCur),\(origAmt),\(xrate)\n"
+            }
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(fileName).csv")
+            try? csv.write(to: tempURL, atomically: true, encoding: .utf8)
+            exportItem = ExportShareItem(url: tempURL)
+            isExporting = false
         }
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(exportFileName).csv")
-        try? csv.write(to: tempURL, atomically: true, encoding: .utf8)
-        exportItem = ExportShareItem(url: tempURL)
+    }
+
+    private func resetAfterExport() {
+        guard !isExporting else { return }
+        isExporting = true
+        Task {
+            await Task.yield()
+            viewModel.restoreDefaults()
+            isExporting = false
+        }
+    }
+
+    private func sanitizedExportFileName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = trimmed.isEmpty ? "pennylet_export" : trimmed
+        let invalid = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+        return fallback.components(separatedBy: invalid).joined(separator: "-")
     }
 
     private func importCSV(from url: URL) {
@@ -1076,44 +2166,16 @@ struct SettingsView: View {
             importResult = (false, 0)
             return
         }
-        let lines = content.components(separatedBy: "\n").dropFirst()
-        var count = 0
-        for line in lines where !line.trimmingCharacters(in: .whitespaces).isEmpty {
-            let cols = line.components(separatedBy: ",")
-            guard cols.count >= 4 else { continue }
-            let date = cols[0].trimmingCharacters(in: .whitespaces)
-            let type: Transaction.TransactionType = cols[1].trimmingCharacters(in: .whitespaces).lowercased() == "income" ? .income : .expense
-            let category = cols[2].trimmingCharacters(in: .whitespaces)
-            let amount = Double(cols[3].trimmingCharacters(in: .whitespaces)) ?? 0
-            let note = cols.count > 4 ? cols[4].replacingOccurrences(of: "\"", with: "").trimmingCharacters(in: .whitespaces) : nil
-            let merchant = cols.count > 5 ? cols[5].replacingOccurrences(of: "\"", with: "").trimmingCharacters(in: .whitespaces) : nil
-            let origCurrency: String? = {
-                guard cols.count > 6 else { return nil }
-                let c = cols[6].trimmingCharacters(in: .whitespaces)
-                return c.isEmpty ? nil : c
-            }()
-            let origAmount = cols.count > 7 ? Double(cols[7].trimmingCharacters(in: .whitespaces)) : nil
-            let exchangeRate = cols.count > 8 ? Double(cols[8].trimmingCharacters(in: .whitespaces)) : nil
-            guard amount > 0 else { continue }
-            let txn = Transaction(
-                id: "import-\(UUID().uuidString)", amount: amount, type: type,
-                category: category.isEmpty ? nil : category,
-                note: note, date: date, merchant: merchant,
-                isRecurring: false, tags: nil,
-                originalCurrency: origCurrency,
-                originalAmount: origAmount,
-                exchangeRate: exchangeRate,
-                baseCurrency: origCurrency != nil ? viewModel.currency : nil
-            )
-            viewModel.transactions.append(txn)
-            count += 1
-        }
-        viewModel.saveLocalData()
+        let count = viewModel.importTransactionsCSV(content: content)
         importResult = count > 0 ? (true, count) : (false, 0)
+        Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            importResult = nil
+        }
     }
 }
 
-private struct WallpaperImageSurface: View {
+struct WallpaperImageSurface: View {
     let image: UIImage
     let aspectRatio: CGFloat
     let zoomPercent: Double
@@ -1156,19 +2218,27 @@ private struct WallpaperImageSurface: View {
     }
 }
 
-private struct WallpaperCropEditor: View {
+struct WallpaperCropEditor: View {
     @Environment(AppViewModel.self) private var viewModel
     @Environment(\.dismiss) private var dismiss
 
     let source: WallpaperCropSource
     let onSave: (WallpaperCropResult) -> Void
 
-    @State private var zoomPercent: Double = 24
-    @State private var horizontalFrame: Double = 50
-    @State private var verticalFrame: Double = 50
+    @State private var zoomPercent: Double
+    @State private var horizontalFrame: Double
+    @State private var verticalFrame: Double
     @State private var dragStartHorizontal: Double?
     @State private var dragStartVertical: Double?
     @State private var zoomStartPercent: Double?
+
+    init(source: WallpaperCropSource, onSave: @escaping (WallpaperCropResult) -> Void) {
+        self.source = source
+        self.onSave = onSave
+        _zoomPercent = State(initialValue: source.initialZoomPercent)
+        _horizontalFrame = State(initialValue: source.initialHorizontalFrame)
+        _verticalFrame = State(initialValue: source.initialVerticalFrame)
+    }
 
     private var phoneAspectRatio: CGFloat {
         let size = UIScreen.main.bounds.size
@@ -1180,7 +2250,7 @@ private struct WallpaperCropEditor: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 18) {
-                Text(viewModel.loc("Pinch and drag to frame your wallpaper."))
+                Text(viewModel.loc("Pinch and drag to frame it."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

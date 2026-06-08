@@ -15,7 +15,7 @@ struct GuestUpgradeModal: View {
                     .foregroundStyle(.yellow)
                 Text(viewModel.loc("Account Required"))
                     .font(.title2.weight(.bold))
-                Text(viewModel.loc("To upgrade to PennyLet Pro, you need an account. Your data will be saved and synced across devices."))
+                Text(viewModel.loc("Create an account to unlock Pro. Your local setup stays yours."))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 32)
@@ -50,7 +50,7 @@ struct GuestUpgradeModal: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(viewModel.primaryColor, in: RoundedRectangle(cornerRadius: 8))
+                        .background(Color(.systemGray), in: RoundedRectangle(cornerRadius: 8))
                     }
 
                     Button(role: .cancel) {
@@ -68,7 +68,7 @@ struct GuestUpgradeModal: View {
             }
             .padding(.top, 20)
             .padding(.bottom, 40)
-            .clearSpendScreenBackground(theme: viewModel.theme, allowsWallpaper: false)
+            .clearSpendScreenBackground(theme: .honey, allowsWallpaper: false)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(viewModel.cancelLabel) { dismiss() }

@@ -5,6 +5,8 @@ struct WallpaperPalette: Codable, Equatable, Sendable {
     var primaryHex: String
     var accentHex: String
     var backgroundHex: String
+    var prominentHexes: [String]?
+    var subtleHexes: [String]?
 
     var primaryColor: Color { Color(hex: primaryHex) }
     var accentColor: Color { Color(hex: accentHex) }
@@ -35,7 +37,13 @@ enum WallpaperPaletteExtractor {
     private static func extractPalette(from image: UIImage) -> WallpaperPalette {
         let samples = colorSamples(from: image)
         guard !samples.isEmpty else {
-            return WallpaperPalette(primaryHex: "0d9488", accentHex: "5eead4", backgroundHex: "f4f7f7")
+            return WallpaperPalette(
+                primaryHex: "0d9488",
+                accentHex: "5eead4",
+                backgroundHex: "f4f7f7",
+                prominentHexes: ["0d9488", "14b8a6", "2563eb", "3f7a5e", "7c3aed"],
+                subtleHexes: ["b8e1dc", "cce7e4", "bfd8ef", "cbdccc", "d6ccef"]
+            )
         }
 
         let candidates = rankedCandidates(from: samples)
@@ -44,11 +52,15 @@ enum WallpaperPaletteExtractor {
             hueDistance($0.hue, primary.hue) > 0.10 && $0.saturation > 0.18
         } ?? adjustedAccent(from: primary)
         let average = averageColor(from: samples)
+        let prominentHexes = prominentColors(from: candidates, primary: primary, accent: accent)
+        let subtleHexes = subtleColors(from: candidates, average: average, primary: primary, accent: accent)
 
         return WallpaperPalette(
             primaryHex: adjustedColor(primary, saturation: 0.62...0.90, brightness: 0.42...0.68).hexString,
             accentHex: adjustedColor(accent, saturation: 0.42...0.74, brightness: 0.68...0.88).hexString,
-            backgroundHex: adjustedColor(average, saturation: 0.10...0.28, brightness: 0.90...0.97).hexString
+            backgroundHex: adjustedColor(average, saturation: 0.10...0.28, brightness: 0.90...0.97).hexString,
+            prominentHexes: prominentHexes,
+            subtleHexes: subtleHexes
         )
     }
 
@@ -131,6 +143,89 @@ enum WallpaperPaletteExtractor {
     private static func score(_ color: PaletteColor) -> Double {
         let brightnessFit = 1 - abs(color.brightness - 0.58)
         return Double(color.count) * (0.35 + color.saturation) * max(0.25, brightnessFit)
+    }
+
+    private static func subtleScore(_ color: PaletteColor) -> Double {
+        let brightnessFit = 1 - abs(color.brightness - 0.76)
+        let softness = 1.15 - min(color.saturation, 0.85)
+        return Double(color.count) * max(0.25, brightnessFit) * max(0.35, softness)
+    }
+
+    private static func prominentColors(
+        from candidates: [PaletteColor],
+        primary: PaletteColor,
+        accent: PaletteColor
+    ) -> [String] {
+        let obvious = candidates
+            .filter { $0.saturation > 0.16 && $0.brightness > 0.14 && $0.brightness < 0.94 }
+        let picked = distinctColors(from: obvious, minimumHueDistance: 0.065, targetCount: 5)
+        let fallback = [primary, accent, adjustedAccent(from: primary), adjustedAccent(from: accent)]
+        let hexes = (picked + fallback).map {
+            adjustedColor($0, saturation: 0.58...0.94, brightness: 0.36...0.74).hexString
+        }
+        return fiveUniqueHexes(hexes, fallback: primary.hexString)
+    }
+
+    private static func subtleColors(
+        from candidates: [PaletteColor],
+        average: PaletteColor,
+        primary: PaletteColor,
+        accent: PaletteColor
+    ) -> [String] {
+        let softCandidates = candidates
+            .filter { $0.brightness > 0.18 && $0.brightness < 0.98 }
+            .sorted { subtleScore($0) > subtleScore($1) }
+        let picked = distinctColors(from: softCandidates, minimumHueDistance: 0.045, targetCount: 5)
+        let fallback = [average, primary, accent, adjustedAccent(from: average)]
+        let hexes = (picked + fallback).map {
+            adjustedColor($0, saturation: 0.20...0.42, brightness: 0.68...0.90).hexString
+        }
+        return fiveUniqueHexes(hexes, fallback: average.hexString)
+    }
+
+    private static func distinctColors(
+        from colors: [PaletteColor],
+        minimumHueDistance: Double,
+        targetCount: Int
+    ) -> [PaletteColor] {
+        var result: [PaletteColor] = []
+        for color in colors {
+            let isDistinct = result.allSatisfy { existing in
+                hueDistance(existing.hue, color.hue) >= minimumHueDistance ||
+                abs(existing.brightness - color.brightness) > 0.26
+            }
+            if isDistinct {
+                result.append(color)
+            }
+            if result.count == targetCount { break }
+        }
+
+        if result.count < targetCount {
+            for color in colors where !result.contains(where: { $0.hexString == color.hexString }) {
+                result.append(color)
+                if result.count == targetCount { break }
+            }
+        }
+        return result
+    }
+
+    private static func fiveUniqueHexes(_ hexes: [String], fallback: String) -> [String] {
+        var result: [String] = []
+        for hex in hexes.map(normalizedHex) where !result.contains(hex) {
+            result.append(hex)
+        }
+
+        let fallbackHex = normalizedHex(fallback)
+        while result.count < 5 {
+            result.append(fallbackHex)
+        }
+        return Array(result.prefix(5))
+    }
+
+    private static func normalizedHex(_ hex: String) -> String {
+        let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).lowercased()
+        guard clean.count >= 6 else { return "0d9488" }
+        return String(clean.suffix(6))
     }
 
     private static func adjustedColor(

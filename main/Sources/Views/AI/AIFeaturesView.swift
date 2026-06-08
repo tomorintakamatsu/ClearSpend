@@ -152,7 +152,8 @@ struct AIFeaturesView: View {
                 } else {
                     emptyView(
                         title: viewModel.dailyAnalysisTitle,
-                        feature: "daily"
+                        feature: "daily",
+                        tab: 0
                     ) {
                         await generate(for: 0) { progress in try await viewModel.generateDailyAnalysis(progress: progress) }
                     }
@@ -190,7 +191,8 @@ struct AIFeaturesView: View {
                 } else {
                     emptyView(
                         title: viewModel.weeklyRecapTitle,
-                        feature: "recap"
+                        feature: "recap",
+                        tab: 1
                     ) {
                         await generate(for: 1) { progress in try await viewModel.generateWeeklyAnalysis(progress: progress) }
                     }
@@ -231,7 +233,8 @@ struct AIFeaturesView: View {
                     } else {
                         emptyView(
                             title: viewModel.monthlyInsightTitle,
-                            feature: "insight"
+                            feature: "insight",
+                            tab: 2
                         ) {
                             await generate(for: 2) { progress in try await viewModel.generateMonthlyAnalysis(progress: progress) }
                         }
@@ -269,11 +272,11 @@ struct AIFeaturesView: View {
                     exhaustedView
                 } else {
                     VStack(spacing: 16) {
-                        PennyLetIconTile(symbol: "chart.line.uptrend.xyaxis", tint: Color(.systemBlue), size: 58, symbolScale: 0.42, shape: .diamond, isProminent: true)
+                        PennyLetIconTile(symbol: "chart.line.uptrend.xyaxis", tint: viewModel.primaryColor, size: 58, symbolScale: 0.42, shape: .diamond, isProminent: true)
                         Text(viewModel.loc("Spending Forecast"))
                             .font(.title3.weight(.semibold))
                         Button {
-                            handleGenerate(feature: "forecast") {
+                            handleGenerate(feature: "forecast", tab: 3) {
                                 await generate(for: 3) { progress in try await viewModel.generateForecast(progress: progress) }
                             }
                         } label: {
@@ -282,7 +285,7 @@ struct AIFeaturesView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 24)
                                 .padding(.vertical, 12)
-                                .premiumActionFill(tint: viewModel.primaryColor)
+                                .premiumActionFill(tint: viewModel.primaryColor, followsWallpaperOpacity: false)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -344,8 +347,8 @@ struct AIFeaturesView: View {
                 : viewModel.loc("Free Uses Exhausted"))
                 .font(.title3.weight(.semibold))
             Text(viewModel.isPro
-                ? viewModel.loc("Please wait until the first of next month for your usage to refresh.")
-                : viewModel.loc("Upgrade to PennyLet Pro for more analyses and unlimited access."))
+                ? viewModel.loc("Your usage refreshes next month.")
+                : viewModel.loc("Upgrade for more AI analyses."))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             if !viewModel.isPro {
@@ -390,6 +393,8 @@ struct AIFeaturesView: View {
                 Spacer()
             }
 
+            aiProgressTrack(for: phase)
+
             HStack {
                 Text(progressStepText(for: phase))
                     .font(.caption.weight(.semibold))
@@ -407,6 +412,31 @@ struct AIFeaturesView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(progressTitle(for: tab)), \(progressStepText(for: phase))")
         .accessibilityValue("\(viewModel.loc(progressPhaseTitleKey(for: phase, tab: tab))). \(viewModel.loc(progressPhaseDetailKey(for: phase)))")
+    }
+
+    private func aiProgressTrack(for phase: AppViewModel.AIProgressPhase) -> some View {
+        let phases = AppViewModel.AIProgressPhase.orderedPhases
+        let activeIndex = phases.firstIndex(of: phase) ?? 0
+
+        return VStack(alignment: .leading, spacing: 8) {
+            ProgressView(value: Double(activeIndex + 1), total: Double(phases.count))
+                .tint(viewModel.primaryColor)
+                .scaleEffect(x: 1, y: 0.75)
+
+            HStack(spacing: 5) {
+                ForEach(Array(phases.enumerated()), id: \.offset) { index, item in
+                    Capsule(style: .continuous)
+                        .fill(index <= activeIndex ? viewModel.primaryColor : Color(.quaternaryLabel))
+                        .frame(height: 5)
+                        .frame(maxWidth: .infinity)
+                        .opacity(index <= activeIndex ? 1 : 0.5)
+                        .accessibilityLabel(viewModel.loc(item.messageKey))
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(viewModel.loc("AI progress"))
+        .accessibilityValue("\(activeIndex + 1)/\(phases.count)")
     }
 
     private func resultView(_ r: AppViewModel.AIResult, tab: Int) -> some View {
@@ -452,7 +482,7 @@ struct AIFeaturesView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .foregroundStyle(.white)
-                    .premiumActionFill(tint: viewModel.primaryColor)
+                    .premiumActionFill(tint: viewModel.primaryColor, followsWallpaperOpacity: false)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(viewModel.loc("Generate Again"))
@@ -503,7 +533,7 @@ struct AIFeaturesView: View {
         let topItems = Array(data.sorted(by: { $0.amount > $1.amount }).prefix(8))
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                PennyLetIconTile(symbol: "chart.bar.fill", tint: Color(.systemBlue), size: 26, symbolScale: 0.42, shape: .capsule)
+                PennyLetIconTile(symbol: "chart.bar.fill", tint: viewModel.primaryColor, size: 26, symbolScale: 0.42, shape: .capsule)
                 Text(viewModel.loc("Weekly Trend"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -544,21 +574,21 @@ struct AIFeaturesView: View {
         return result
     }
 
-    private func emptyView(title: String, feature: String, action: @escaping () async -> Void) -> some View {
+    private func emptyView(title: String, feature: String, tab: Int, action: @escaping () async -> Void) -> some View {
         VStack(spacing: 16) {
             PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 58, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(title)
                 .font(.title3.weight(.semibold))
 
             Button {
-                handleGenerate(feature: feature, action: action)
+                handleGenerate(feature: feature, tab: tab, action: action)
             } label: {
                 Label(viewModel.generateLabel, systemImage: "wand.and.stars")
                     .font(.headline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .premiumActionFill(tint: viewModel.primaryColor)
+                    .premiumActionFill(tint: viewModel.primaryColor, followsWallpaperOpacity: false)
             }
         }
         .frame(maxWidth: .infinity)
@@ -617,7 +647,7 @@ struct AIFeaturesView: View {
                             }
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                            .themedMiniPanel(tint: viewModel.primaryColor, cornerRadius: 10, colorStrength: 0.75)
                             .contentShape(Rectangle())
                             .onTapGesture { selectedHistoryItem = item }
                             .contextMenu {
@@ -664,8 +694,11 @@ struct AIFeaturesView: View {
         showUpgradeSheet = true
     }
 
-    private func handleGenerate(feature: String, action: @escaping () async -> Void) {
+    private func handleGenerate(feature: String, tab: Int? = nil, action: @escaping () async -> Void) {
         if viewModel.canUseFeature(feature) {
+            if let tab {
+                beginGenerating(for: tab)
+            }
             Task { await action() }
         } else if viewModel.isPro {
             showUsageAlert = true
@@ -677,19 +710,19 @@ struct AIFeaturesView: View {
     private func generateAgain(for tab: Int) {
         switch tab {
         case 0:
-            handleGenerate(feature: "daily") {
+            handleGenerate(feature: "daily", tab: tab) {
                 await generate(for: 0) { progress in try await viewModel.generateDailyAnalysis(progress: progress) }
             }
         case 1:
-            handleGenerate(feature: "recap") {
+            handleGenerate(feature: "recap", tab: tab) {
                 await generate(for: 1) { progress in try await viewModel.generateWeeklyAnalysis(progress: progress) }
             }
         case 2:
-            handleGenerate(feature: "insight") {
+            handleGenerate(feature: "insight", tab: tab) {
                 await generate(for: 2) { progress in try await viewModel.generateMonthlyAnalysis(progress: progress) }
             }
         case 3:
-            handleGenerate(feature: "forecast") {
+            handleGenerate(feature: "forecast", tab: tab) {
                 await generate(for: 3) { progress in try await viewModel.generateForecast(progress: progress) }
             }
         default:
@@ -701,20 +734,12 @@ struct AIFeaturesView: View {
         for tab: Int,
         operation: @escaping (@escaping AppViewModel.AIProgressHandler) async throws -> AppViewModel.AIResult
     ) async {
-        updateProgress(.collectingData, for: tab)
-        tabLoading[tab] = true
-        tabErrors[tab] = nil
+        if tabLoading.indices.contains(tab), tabLoading[tab] == false {
+            beginGenerating(for: tab)
+        }
+        await Task.yield()
         defer {
             tabLoading[tab] = false
-        }
-
-        // Clear current before generating new
-        switch tab {
-        case 0: viewModel.currentDailyResult = nil
-        case 1: viewModel.currentWeeklyResult = nil
-        case 2: viewModel.currentMonthlyResult = nil
-        case 3: viewModel.currentForecastResult = nil
-        default: break
         }
         do {
             _ = try await operation { phase in
@@ -725,11 +750,26 @@ struct AIFeaturesView: View {
         }
     }
 
+    @MainActor
+    private func beginGenerating(for tab: Int) {
+        guard tabLoading.indices.contains(tab) else { return }
+        updateProgress(.collectingData, for: tab)
+        tabLoading[tab] = true
+        tabErrors[tab] = nil
+        switch tab {
+        case 0: viewModel.currentDailyResult = nil
+        case 1: viewModel.currentWeeklyResult = nil
+        case 2: viewModel.currentMonthlyResult = nil
+        case 3: viewModel.currentForecastResult = nil
+        default: break
+        }
+    }
+
     private func aiErrorMessage(_ error: Error) -> String {
         if let clientError = error as? ClientError {
             switch clientError {
             case .requestTimedOut:
-                return viewModel.loc("AI request timed out. Please check your connection and try again.")
+                return viewModel.loc("AI timed out. Try again.")
             case .unauthorized, .serverError:
                 return viewModel.loc("AI service is unavailable. Please try again.")
             default:
@@ -786,6 +826,8 @@ struct AIFeaturesView: View {
             }
         case .waitingForAI:
             return "Waiting for AI response"
+        case .usingLocalSummary:
+            return "Finishing with a local summary"
         case .responseReceived:
             switch tab {
             case 0: return "Checking the daily result"
@@ -810,15 +852,17 @@ struct AIFeaturesView: View {
     private func progressPhaseDetailKey(for phase: AppViewModel.AIProgressPhase) -> String {
         switch phase {
         case .collectingData:
-            return "Reviewing local transactions, budgets, goals, categories, and recent activity."
+            return "Reading your local money data."
         case .requestPrepared:
-            return "Turning the relevant spending evidence into a focused AI request."
+            return "Preparing the AI request."
         case .waitingForAI:
-            return "Waiting for the AI to return a structured answer. Forecasts can take a little longer."
+            return "PennyLet waits briefly, then finishes with private local math if needed."
+        case .usingLocalSummary:
+            return "Your local spending summary is being turned into a readable result."
         case .responseReceived:
-            return "Checking the returned text, numbers, and chart data before showing it."
+            return "Checking the result."
         case .savingResult:
-            return "Saving the result on this device so it appears in history."
+            return "Saving on this device."
         case .finished:
             return "Your analysis is ready to read."
         }

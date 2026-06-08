@@ -8,6 +8,21 @@ enum CurrencyFormat {
         "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"
     ]
 
+    private static let supportedCurrencySymbols: [String: String] = [
+        "USD": "$",
+        "EUR": "€",
+        "GBP": "£",
+        "JPY": "¥",
+        "CAD": "C$",
+        "AUD": "A$",
+        "CHF": "CHF",
+        "CNY": "¥",
+        "HKD": "HK$",
+        "SGD": "S$",
+        "KRW": "₩",
+        "BRL": "R$"
+    ]
+
     static func format(_ amount: Double, currency: String = "USD") -> String {
         formatted(amount, currency: currency)
     }
@@ -19,9 +34,16 @@ enum CurrencyFormat {
     }
 
     static func currencySymbol(for currency: String = "USD") -> String {
+        if let supported = supportedSymbol(for: currency) {
+            return supported
+        }
         let formatter = makeFormatter(currency: currency, fractionDigits: fractionDigits(for: currency))
         formatter.currencyCode = currency
         return formatter.currencySymbol ?? "$"
+    }
+
+    static func supportedSymbol(for currency: String) -> String? {
+        supportedCurrencySymbols[currency.uppercased()]
     }
 
     static func formatForeign(_ amount: Double, currency: String) -> String {
@@ -50,11 +72,7 @@ enum CurrencyFormat {
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "\u{00a0}", with: "")
 
-        if cleaned.contains(",") && cleaned.contains(".") {
-            cleaned = cleaned.replacingOccurrences(of: ",", with: "")
-        } else {
-            cleaned = cleaned.replacingOccurrences(of: ",", with: ".")
-        }
+        cleaned = normalizeSeparators(cleaned)
 
         cleaned = cleaned.filter { $0.isNumber || $0 == "." || $0 == "-" }
         let decimalCount = cleaned.filter { $0 == "." }.count
@@ -64,6 +82,35 @@ enum CurrencyFormat {
         }
 
         return Double(cleaned)
+    }
+
+    private static func normalizeSeparators(_ value: String) -> String {
+        let commaCount = value.filter { $0 == "," }.count
+        let dotCount = value.filter { $0 == "." }.count
+
+        if commaCount > 0, dotCount > 0 {
+            let lastComma = value.lastIndex(of: ",")!
+            let lastDot = value.lastIndex(of: ".")!
+            if lastComma > lastDot {
+                return value
+                    .replacingOccurrences(of: ".", with: "")
+                    .replacingOccurrences(of: ",", with: ".")
+            }
+            return value.replacingOccurrences(of: ",", with: "")
+        }
+
+        if commaCount > 0 {
+            let parts = value.split(separator: ",", omittingEmptySubsequences: false)
+            let looksLikeThousands = parts.count > 1 &&
+                parts.dropFirst().allSatisfy { $0.count == 3 && $0.allSatisfy(\.isNumber) } &&
+                (parts.first?.allSatisfy { $0.isNumber || $0 == "-" } ?? false)
+            if looksLikeThousands {
+                return value.replacingOccurrences(of: ",", with: "")
+            }
+            return value.replacingOccurrences(of: ",", with: ".")
+        }
+
+        return value
     }
 
     private static func formatted(_ amount: Double, currency: String) -> String {

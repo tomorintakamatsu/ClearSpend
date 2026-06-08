@@ -114,7 +114,7 @@ struct ReceiptScannerView: View {
         let choosePhotoLabel = viewModel.loc("Choose Photo")
 
         return VStack(spacing: 20) {
-            PennyLetIconTile(symbol: "camera.viewfinder", tint: Color(.systemBlue), size: 62, symbolScale: 0.42, shape: .circle, isProminent: true)
+            PennyLetIconTile(symbol: "camera.viewfinder", tint: viewModel.primaryColor, size: 62, symbolScale: 0.42, shape: .circle, isProminent: true)
             Text(viewModel.loc("Take a photo of your receipt"))
                 .font(.title3.weight(.semibold))
             Text(viewModel.loc("We'll extract the merchant, amount, and category automatically."))

@@ -4,8 +4,14 @@ struct WelcomeView: View {
     @Environment(AppViewModel.self) private var viewModel
     @State private var step = 0
     @State private var monthlyIncome = ""
-    @State private var monthlyEssentials = ""
+    @State private var currentSpendableBalance = ""
+    @State private var cashOnHand = ""
+    @State private var moneyToKeepUntouched = ""
+    @State private var billsBeforePayday = ""
     @State private var monthlySavings = ""
+    @State private var nextPaycheckAmount = ""
+    @State private var nextPaydayDate = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
+    @State private var incomeCadence = "monthly"
     @State private var payDay = 1
     @State private var selectedCurrency = "USD"
     @State private var selectedLanguage = "en"
@@ -18,15 +24,26 @@ struct WelcomeView: View {
     @State private var csvImportResult: (success: Bool, count: Int)?
     private let currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "HKD", "SGD", "KRW", "BRL"]
     private let languages = ["en", "ja", "zh"]
+    private let incomeCadences = ["weekly", "biweekly", "semimonthly", "monthly"]
+
+    private var setupPrimaryText: Color { Color(.label) }
+    private var setupSecondaryText: Color { Color(.secondaryLabel) }
+    private var setupTertiaryText: Color { Color(.tertiaryLabel) }
+    private var setupBackground: Color { Color(.systemGroupedBackground) }
+    private var setupPanelBackground: Color { Color(.secondarySystemGroupedBackground) }
+    private var setupAccent: Color { viewModel.primaryColor }
 
     var body: some View {
         VStack {
             TabView(selection: $step) {
                 splashStep.tag(0)
                 preferencesStep.tag(1)
-                budgetStep.tag(2)
+                todaySnapshotStep.tag(2)
+                rhythmStep.tag(3)
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
+            .tabViewStyle(.page(indexDisplayMode: .never))
+
+            setupPageIndicator
 
             if let error = onboardingError {
                 Text(error)
@@ -36,13 +53,19 @@ struct WelcomeView: View {
                     .padding(.horizontal, 32)
             }
 
+            if let csvImportResult {
+                importStatusBanner(csvImportResult)
+                    .padding(.horizontal, 24)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             HStack {
                 if step > 0 {
                     Button(viewModel.loc("Back")) { withAnimation { step -= 1 } }
                 }
                 Spacer()
-                Button(step == 2 ? (isSaving ? viewModel.loc("Saving...") : viewModel.loc("Get Started")) : viewModel.loc("Next")) {
-                    if step == 2 {
+                Button(step == 3 ? (isSaving ? viewModel.loc("Saving...") : viewModel.loc("Get Started")) : viewModel.loc("Next")) {
+                    if step == 3 {
                         saveAndContinue()
                     } else {
                         onboardingError = nil
@@ -55,7 +78,23 @@ struct WelcomeView: View {
             .padding(.horizontal, 32)
             .padding(.bottom, 20)
         }
-        .clearSpendScreenBackground(theme: selectedTheme)
+        .background(setupBackground.ignoresSafeArea())
+        .foregroundStyle(setupPrimaryText)
+        .tint(setupAccent)
+    }
+
+    private var setupPageIndicator: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<4, id: \.self) { index in
+                Circle()
+                    .fill(index == step ? setupAccent : setupTertiaryText.opacity(0.30))
+                    .frame(width: index == step ? 8 : 7, height: index == step ? 8 : 7)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.82), value: step)
+            }
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .accessibilityHidden(true)
     }
 
     private var splashStep: some View {
@@ -67,14 +106,23 @@ struct WelcomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             Text(viewModel.loc("Welcome to PennyLet"))
                 .font(.title.weight(.bold))
-            Text(viewModel.loc("Track your spending, build healthy budgets, and reach your financial goals."))
+            Text(viewModel.loc("Start today. No bank import needed."))
+                .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(setupPrimaryText)
+                .padding(.horizontal, 36)
+
+            Text(viewModel.loc("Tell PennyLet what you have now. It helps from here."))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(setupSecondaryText)
                 .padding(.horizontal, 40)
 
-            Text(viewModel.loc("Your data is stored locally on this device."))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            VStack(spacing: 8) {
+                splashPromiseRow(icon: "lock.fill", title: viewModel.loc("No bank login"))
+                splashPromiseRow(icon: "clock.badge.checkmark", title: viewModel.loc("No old cleanup"))
+                splashPromiseRow(icon: "checkmark.seal.fill", title: viewModel.loc("Explainable local numbers"))
+            }
+            .padding(.horizontal, 34)
 
             Picker(viewModel.loc("Language"), selection: $selectedLanguage) {
                 ForEach(languages, id: \.self) { code in
@@ -91,14 +139,14 @@ struct WelcomeView: View {
             Button {
                 showCSVImport = true
             } label: {
-                Label(viewModel.loc("Import CSV"), systemImage: "square.and.arrow.down")
+                Label(viewModel.loc("Have a CSV? Import it."), systemImage: "square.and.arrow.down")
                     .font(.subheadline)
-                    .foregroundStyle(viewModel.primaryColor)
+                    .foregroundStyle(setupPrimaryText)
             }
 
-            Text(viewModel.loc("Skip manual setup by importing a CSV file of your transactions."))
+            Text(viewModel.loc("Optional. You can start without old data."))
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(setupTertiaryText)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
@@ -121,11 +169,119 @@ struct WelcomeView: View {
         }
     }
 
+    private func splashPromiseRow(icon: String, title: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(setupAccent)
+                .frame(width: 26, height: 26)
+                .background(setupAccent.opacity(0.10), in: Circle())
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(setupPrimaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(setupPanelBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var todaySnapshotStep: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(viewModel.loc("What do you have today?"))
+                        .font(.title2.weight(.bold))
+                    Text(viewModel.loc("Use what you have right now. Payday does not need to match."))
+                        .font(.subheadline)
+                        .foregroundStyle(setupSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                preferenceSection(viewModel.loc("Currency")) {
+                    Picker(viewModel.loc("Currency"), selection: $selectedCurrency) {
+                        ForEach(currencies, id: \.self) { c in
+                            Text(currencyPickerLabel(c)).tag(c)
+                        }
+                    }
+                    .onChange(of: selectedCurrency) { _, new in
+                        viewModel.currency = new
+                        viewModel.savePreferencesToDisk()
+                    }
+                }
+
+                labeledField(viewModel.loc("Spendable balance today"), value: $currentSpendableBalance, icon: "banknote.fill", hint: viewModel.loc("Money you can use before payday, like checking."))
+                    .keyboardType(.decimalPad)
+
+                labeledField(viewModel.loc("Cash in pocket"), value: $cashOnHand, icon: "wallet.pass.fill", hint: viewModel.loc("Cash you physically have, like money in your wallet."))
+                    .keyboardType(.decimalPad)
+
+                labeledField(viewModel.loc("Keep untouched"), value: $moneyToKeepUntouched, icon: "lock.fill", hint: viewModel.loc("Money to protect, like emergency savings."))
+                    .keyboardType(.decimalPad)
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private var rhythmStep: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(viewModel.loc("What is coming next?"))
+                        .font(.title2.weight(.bold))
+                    Text(viewModel.loc("This connects today to payday."))
+                        .font(.subheadline)
+                        .foregroundStyle(setupSecondaryText)
+                }
+
+                labeledField(viewModel.loc("Normal monthly income"), value: $monthlyIncome, icon: "arrow.down.forward", hint: viewModel.loc("Your usual take-home for a full month."))
+                    .keyboardType(.decimalPad)
+
+                labeledField(viewModel.loc("Next paycheck amount"), value: $nextPaycheckAmount, icon: "calendar.badge.plus", hint: viewModel.loc("Leave blank to use monthly income."))
+                    .keyboardType(.decimalPad)
+
+                DatePicker(viewModel.loc("Next payday"), selection: $nextPaydayDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .onChange(of: nextPaydayDate) { _, newDate in
+                        payDay = Calendar.current.component(.day, from: newDate)
+                    }
+
+                Picker(viewModel.loc("Pay rhythm"), selection: $incomeCadence) {
+                    ForEach(incomeCadences, id: \.self) { cadence in
+                        Text(viewModel.loc(cadence)).tag(cadence)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                labeledField(viewModel.loc("Bills before payday"), value: $billsBeforePayday, icon: "house.fill", hint: viewModel.loc("Bills due before payday, like rent or subscriptions."))
+                    .keyboardType(.decimalPad)
+
+                labeledField(viewModel.loc("Save before payday"), value: $monthlySavings, icon: "target", hint: viewModel.loc("Money to set aside before payday."))
+                    .keyboardType(.decimalPad)
+
+                onboardingNote(
+                    icon: "calendar.badge.clock",
+                    text: viewModel.loc("After payday, PennyLet uses your normal rhythm.")
+                )
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 40)
+        }
+    }
+
     private var preferencesStep: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text(viewModel.loc("Preferences"))
-                    .font(.title2.weight(.bold))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(viewModel.loc("Make PennyLet yours"))
+                        .font(.title2.weight(.bold))
+                    Text(viewModel.loc("Pick the basics now. You can customize wallpaper later."))
+                        .font(.subheadline)
+                        .foregroundStyle(setupSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 preferenceSection(viewModel.loc("Theme")) {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -144,7 +300,7 @@ struct WelcomeView: View {
                                             )
                                         Text(viewModel.loc(theme.label))
                                             .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(setupSecondaryText)
                                             .lineLimit(2)
                                             .minimumScaleFactor(0.75)
                                             .multilineTextAlignment(.center)
@@ -173,17 +329,10 @@ struct WelcomeView: View {
                     .pickerStyle(.segmented)
                 }
 
-                preferenceSection(viewModel.loc("Currency")) {
-                    Picker(viewModel.loc("Currency"), selection: $selectedCurrency) {
-                        ForEach(currencies, id: \.self) { c in
-                            Text(c).tag(c)
-                        }
-                    }
-                    .onChange(of: selectedCurrency) { _, new in
-                        viewModel.currency = new
-                        viewModel.savePreferencesToDisk()
-                    }
-                }
+                onboardingNote(
+                    icon: "photo.on.rectangle.angled",
+                    text: viewModel.loc("Wallpaper themes live in Settings, so setup stays quick.")
+                )
             }
             .padding(.horizontal, 32)
             .padding(.bottom, 40)
@@ -202,67 +351,81 @@ struct WelcomeView: View {
         }
     }
 
-    private var budgetStep: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Text(viewModel.loc("Your Budget"))
-                    .font(.title2.weight(.bold))
-
-                labeledField(viewModel.loc("Monthly Income"), value: $monthlyIncome, icon: "arrow.down.forward", hint: viewModel.loc("After tax"))
-                    .keyboardType(.decimalPad)
-
-                labeledField(viewModel.loc("Essential Bills"), value: $monthlyEssentials, icon: "house.fill", hint: viewModel.loc("Rent, utilities, etc."))
-                    .keyboardType(.decimalPad)
-
-                labeledField(viewModel.loc("Savings Goal"), value: $monthlySavings, icon: "banknote.fill", hint: viewModel.loc("Monthly target"))
-                    .keyboardType(.decimalPad)
-
-                HStack {
-                    Label(viewModel.loc("Pay Day"), systemImage: "calendar")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Picker("", selection: $payDay) {
-                        ForEach(1...31, id: \.self) { day in
-                            Text("\(day)").tag(day)
-                        }
-                    }
-                }
-
-            }
-            .padding(.horizontal, 32)
-            .padding(.bottom, 40)
-        }
-    }
-
-    private var analysisTimeOptions: [String] {
-        stride(from: 0, to: 24, by: 1).flatMap { hour in
-            [String(format: "%02d:00", hour), String(format: "%02d:30", hour)]
-        }
-    }
-
     private func preferenceSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(setupPrimaryText)
             content()
         }
     }
 
     private func labeledField(_ label: String, value: Binding<String>, icon: String, hint: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(label, systemImage: icon)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            HStack {
-                Text("$")
-                    .foregroundStyle(.secondary)
-                TextField(hint, text: value)
+        VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(label, systemImage: icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(setupPrimaryText)
+                Text("(\(hint))")
+                    .font(.caption2)
+                    .foregroundStyle(setupSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 10) {
+                Text(CurrencyFormat.currencySymbol(for: selectedCurrency))
+                    .font(.title3.weight(.bold).monospacedDigit())
+                    .foregroundStyle(setupSecondaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                TextField(viewModel.loc("Amount"), text: value)
                     .font(.title3)
+                    .foregroundStyle(setupPrimaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .background(setupPanelBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
+    }
+
+    private func currencyPickerLabel(_ code: String) -> String {
+        "\(code) \(CurrencyFormat.currencySymbol(for: code))"
+    }
+
+    private func importStatusBanner(_ result: (success: Bool, count: Int)) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(result.success ? Color(.systemGreen) : Color(.systemOrange))
+            Text(result.success
+                 ? "\(viewModel.loc("Imported")) \(result.count) \(viewModel.loc("transactions successfully."))"
+                 : viewModel.loc("The file could not be read. Check the format and try again."))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(setupPrimaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(setupPanelBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke((result.success ? Color(.systemGreen) : Color(.systemOrange)).opacity(0.24), lineWidth: 1)
+        }
+    }
+
+    private func onboardingNote(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(setupAccent)
+                .frame(width: 24, height: 24)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(setupSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(setupPanelBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func importCSV(from url: URL) {
@@ -275,39 +438,7 @@ struct WelcomeView: View {
             csvImportResult = (false, 0)
             return
         }
-        let lines = content.components(separatedBy: "\n").dropFirst()
-        var count = 0
-        for line in lines where !line.trimmingCharacters(in: .whitespaces).isEmpty {
-            let cols = line.components(separatedBy: ",")
-            guard cols.count >= 4 else { continue }
-            let date = cols[0].trimmingCharacters(in: .whitespaces)
-            let type: Transaction.TransactionType = cols[1].trimmingCharacters(in: .whitespaces).lowercased() == "income" ? .income : .expense
-            let category = cols[2].trimmingCharacters(in: .whitespaces)
-            let amount = Double(cols[3].trimmingCharacters(in: .whitespaces)) ?? 0
-            let note = cols.count > 4 ? cols[4].trimmingCharacters(in: .whitespaces) : nil
-            let merchant = cols.count > 5 ? cols[5].trimmingCharacters(in: .whitespaces) : nil
-            let origCurrency: String? = {
-                guard cols.count > 6 else { return nil }
-                let c = cols[6].trimmingCharacters(in: .whitespaces)
-                return c.isEmpty ? nil : c
-            }()
-            let origAmount = cols.count > 7 ? Double(cols[7].trimmingCharacters(in: .whitespaces)) : nil
-            let exchangeRate = cols.count > 8 ? Double(cols[8].trimmingCharacters(in: .whitespaces)) : nil
-            guard amount > 0 else { continue }
-            let txn = Transaction(
-                id: "import-\(UUID().uuidString)", amount: amount, type: type,
-                category: category.isEmpty ? nil : category,
-                note: note, date: date, merchant: merchant,
-                isRecurring: false, tags: nil,
-                originalCurrency: origCurrency,
-                originalAmount: origAmount,
-                exchangeRate: exchangeRate,
-                baseCurrency: origCurrency != nil ? viewModel.currency : nil
-            )
-            viewModel.transactions.append(txn)
-            count += 1
-        }
-        viewModel.saveLocalData()
+        let count = viewModel.importTransactionsCSV(content: content)
         csvImportResult = count > 0 ? (true, count) : (false, 0)
     }
 
@@ -322,14 +453,25 @@ struct WelcomeView: View {
             let localBudget = Budget(
                 id: UUID().uuidString,
                 monthlyIncome: income,
-                monthlyEssentials: CurrencyFormat.parseInput(monthlyEssentials),
+                monthlyEssentials: CurrencyFormat.parseInput(billsBeforePayday),
                 monthlySavingsGoal: CurrencyFormat.parseInput(monthlySavings),
-                payDay: payDay,
+                payDay: Calendar.current.component(.day, from: nextPaydayDate),
+                startDate: AppViewModel.storedDateString(from: Date()),
+                currentSpendableBalance: CurrencyFormat.parseInput(currentSpendableBalance) ?? 0,
+                cashOnHand: CurrencyFormat.parseInput(cashOnHand) ?? 0,
+                moneyToKeepUntouched: CurrencyFormat.parseInput(moneyToKeepUntouched) ?? 0,
+                billsDueBeforeNextIncome: CurrencyFormat.parseInput(billsBeforePayday) ?? 0,
+                savingsDueBeforeNextIncome: CurrencyFormat.parseInput(monthlySavings) ?? 0,
+                nextIncomeDate: AppViewModel.storedDateString(from: nextPaydayDate),
+                nextIncomeAmount: CurrencyFormat.parseInput(nextPaycheckAmount) ?? income,
+                incomeCadence: incomeCadence,
                 currency: selectedCurrency,
                 language: selectedLanguage,
                 theme: selectedTheme.rawValue,
                 colorMode: selectedColorMode.rawValue,
-                font: selectedFont.rawValue
+                font: selectedFont.rawValue,
+                createdDate: ISO8601DateFormatter().string(from: Date()),
+                updatedDate: ISO8601DateFormatter().string(from: Date())
             )
             await MainActor.run {
                 viewModel.budgets = [localBudget]

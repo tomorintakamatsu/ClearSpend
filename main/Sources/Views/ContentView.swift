@@ -214,7 +214,7 @@ private struct MoreView: View {
                             icon: "heart.fill",
                             title: viewModel.loc("Budget Health"),
                             tint: Color(.systemPink),
-                            metric: "\(Int(viewModel.spendSummary.spendPercent))%",
+                            metric: "\(Int(viewModel.dashboardSpendSummary.spendPercent))%",
                             shape: .diamond
                         )
                     }
@@ -249,7 +249,7 @@ private struct MoreHeaderCard: View {
             HStack(spacing: 10) {
                 MiniMoreStat(
                     title: viewModel.loc("Safe today"),
-                    value: CurrencyFormat.format(viewModel.spendSummary.safeDaily, currency: viewModel.currency)
+                    value: CurrencyFormat.format(viewModel.dashboardSpendSummary.safeDaily, currency: viewModel.currency)
                 )
                 MiniMoreStat(
                     title: viewModel.loc("Tracked subs"),
@@ -263,6 +263,7 @@ private struct MoreHeaderCard: View {
 }
 
 private struct MiniMoreStat: View {
+    @Environment(AppViewModel.self) private var viewModel
     let title: String
     let value: String
 
@@ -281,7 +282,7 @@ private struct MiniMoreStat: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .themedMiniPanel(tint: viewModel.primaryColor, cornerRadius: 12, colorStrength: 0.85)
     }
 }
 
@@ -320,11 +321,7 @@ private struct MoreDestinationCard: View {
             .frame(minWidth: 36, alignment: .trailing)
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
-        }
+        .themedMiniPanel(tint: tint, cornerRadius: 16)
         .shadow(color: .black.opacity(0.05), radius: 16, y: 8)
     }
 }

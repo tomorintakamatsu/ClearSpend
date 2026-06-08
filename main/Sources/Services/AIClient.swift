@@ -14,8 +14,8 @@ actor AIClient {
 
     private init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 70
-        config.timeoutIntervalForResource = 90
+        config.timeoutIntervalForRequest = 35
+        config.timeoutIntervalForResource = 45
         config.waitsForConnectivity = false
         config.allowsExpensiveNetworkAccess = true
         config.allowsConstrainedNetworkAccess = true
@@ -93,7 +93,7 @@ actor AIClient {
     }
 
     private func timeout(for tier: AIModelTier) -> TimeInterval {
-        tier == .pro ? 60 : 70
+        tier == .pro ? 35 : 30
     }
 
     private func buildRequest(_ urlString: String, body: some Encodable, timeout: TimeInterval) throws -> URLRequest {

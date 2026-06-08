@@ -16,7 +16,7 @@ struct RecentActivityList: View {
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        PennyLetIconTile(symbol: "clock.arrow.circlepath", tint: Color(.systemBlue), size: 30, symbolScale: 0.43, shape: .capsule)
+                        PennyLetIconTile(symbol: "clock.arrow.circlepath", tint: viewModel.primaryColor, size: 30, symbolScale: 0.43, shape: .capsule)
                         Text(viewModel.loc("Recent Activity"))
                             .font(.headline.weight(.semibold))
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")

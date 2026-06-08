@@ -4,7 +4,7 @@ import Charts
 struct BudgetHealthView: View {
     @Environment(AppViewModel.self) private var viewModel
 
-    var summary: SpendSummary { viewModel.spendSummary }
+    var summary: SpendSummary { viewModel.dashboardSpendSummary }
     var breakdown: [CategoryBreakdown] { viewModel.categoryBreakdown }
 
     var body: some View {
@@ -130,7 +130,7 @@ struct BudgetHealthView: View {
     private var barChartSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                PennyLetIconTile(symbol: "chart.bar.xaxis", tint: Color(.systemBlue), size: 30, symbolScale: 0.43, shape: .capsule)
+                PennyLetIconTile(symbol: "chart.bar.xaxis", tint: viewModel.primaryColor, size: 30, symbolScale: 0.43, shape: .capsule)
                 Text(viewModel.loc("Income vs Spending"))
                     .font(.headline)
                 Spacer()
@@ -152,7 +152,7 @@ struct BudgetHealthView: View {
                         x: .value("Type", viewModel.loc("Budget")),
                         y: .value("Amount", summary.monthlyDisposable)
                     )
-                    .foregroundStyle(.blue.opacity(0.3))
+                    .foregroundStyle(viewModel.primaryColor.opacity(0.3))
                 }
             }
             .frame(height: 180)
@@ -178,7 +178,7 @@ struct BudgetHealthView: View {
             HStack(spacing: 12) {
                 statCard(viewModel.loc("Remaining"), value: summary.remaining, color: summary.isOverBudget ? .red : .green)
                 statCard(viewModel.loc("Safe Daily"), value: summary.safeDaily, color: viewModel.primaryColor)
-                statCard(viewModel.loc("Days Left"), value: Double(summary.daysLeft), color: .blue, isWhole: true)
+                statCard(viewModel.loc("Days Left"), value: Double(summary.daysLeft), color: viewModel.primaryColor, isWhole: true)
             }
         }
         .padding(18)

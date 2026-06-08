@@ -67,6 +67,7 @@ struct TransactionRow: View {
 }
 
 private struct TransactionRowSurface: ViewModifier {
+    @Environment(AppViewModel.self) private var viewModel
     let isEmbedded: Bool
 
     func body(content: Content) -> some View {
@@ -74,11 +75,7 @@ private struct TransactionRowSurface: ViewModifier {
             content
         } else {
             content
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1)
-                }
+                .themedMiniPanel(tint: viewModel.primaryColor, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.04), radius: 10, y: 6)
         }
     }

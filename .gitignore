@@ -1,7 +1,10 @@
 .DS_Store
 build/
 DerivedData/
+.derivedData*/
+.codex-backups/
 *.xcuserstate
+*.xcworkspace/xcuserdata/
 
 # Local backend secrets and generated Cloudflare files
 .dev.vars

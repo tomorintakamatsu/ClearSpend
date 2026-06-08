@@ -1,10 +1,13 @@
 import SwiftUI
 import Observation
 import UIKit
+import UserNotifications
 
 enum AppDisplayBlock: String, CaseIterable, Hashable {
     case homeSafeToSpend
     case homeMonthlyPulse
+    case homeReviewQueue
+    case homeWatchlists
     case homeTopCategories
     case homeRecentActivity
     case activityFilter
@@ -27,6 +30,8 @@ struct WallpaperThemeProfile: Codable, Identifiable, Equatable {
     var name: String
     var imageFileName: String
     var palette: WallpaperPalette
+    var themeColorHex: String?
+    var cardColorHex: String?
     var visibility: Double
     var blurRadius: Double
     var panelOpacity: Double
@@ -36,6 +41,29 @@ struct WallpaperThemeProfile: Codable, Identifiable, Equatable {
     var createdAt: Date
 }
 
+struct StartFromTodaySummary: Equatable, Sendable {
+    var trueSafeToSpend: Double
+    var displaySafeToSpend: Double
+    var dailySafeToSpend: Double
+    var daysUntilNextIncome: Int
+    var currentMoney: Double
+    var billsDueBeforeNextIncome: Double
+    var subscriptionCommitmentsBeforeNextIncome: Double
+    var savingsDueBeforeNextIncome: Double
+    var moneyToKeepUntouched: Double
+    var totalProtectedBeforeNextIncome: Double
+    var nextIncomeAmount: Double
+    var nextIncomeDate: Date?
+    var explanation: String
+}
+
+struct ReviewRecurringDisplay: Equatable, Sendable {
+    var name: String
+    var cadence: MoneyLogicV2Cadence
+    var amount: Double
+    var nextDueDate: Date
+}
+
 @MainActor
 @Observable
 final class AppViewModel {
@@ -43,6 +71,7 @@ final class AppViewModel {
 
     private let prefs = UserDefaults.standard
     private let hiddenDisplayBlocksKey = "hidden_display_blocks"
+    private let homeDisplayBlockOrderKey = "home_display_block_order"
     private let wallpaperPaletteKey = "wallpaper_palette"
     private let wallpaperFileName = "pennylet_wallpaper_theme.jpg"
     private let wallpaperVisibilityKey = "wallpaper_visibility"
@@ -56,6 +85,13 @@ final class AppViewModel {
     private let wallpaperProfilesFolderName = "WallpaperProfiles"
     private let customThemeColorHexKey = "custom_theme_color_hex"
     private let customThemeColorEnabledKey = "custom_theme_color_enabled"
+    private let wallpaperThemeColorEnabledKey = "wallpaper_theme_color_enabled"
+    private let wallpaperCardColorHexKey = "wallpaper_card_color_hex"
+    private let wallpaperCardColorEnabledKey = "wallpaper_card_color_enabled"
+    private let goalQuickAddAmountsKey = "goal_quick_add_amounts"
+    private let customWatchlistsKey = "custom_watchlists"
+    private let dismissedReviewItemIDsKey = "dismissed_review_item_ids"
+    private let defaultGoalQuickAddAmounts: [Double] = [10, 50, 100, 500]
 
     func savePreferencesToDisk() {
         prefs.set(theme.rawValue, forKey: "app_theme")
@@ -64,7 +100,13 @@ final class AppViewModel {
         prefs.set(language, forKey: "app_language")
         prefs.set(currency, forKey: "app_currency")
         prefs.set(isUsingCustomThemeColor, forKey: customThemeColorEnabledKey)
+        prefs.set(isUsingWallpaperThemeColor, forKey: wallpaperThemeColorEnabledKey)
         prefs.set(hexString(from: customThemeColor), forKey: customThemeColorHexKey)
+        prefs.set(isUsingWallpaperCardColor, forKey: wallpaperCardColorEnabledKey)
+        prefs.set(hexString(from: wallpaperCardColor), forKey: wallpaperCardColorHexKey)
+        saveGoalQuickAddAmounts()
+        saveCustomWatchlists()
+        saveDismissedReviewItemIDs()
         saveDisplayBlockPreferences()
     }
 
@@ -76,6 +118,12 @@ final class AppViewModel {
         if let cr = prefs.string(forKey: "app_currency") { currency = cr }
         if let hex = prefs.string(forKey: customThemeColorHexKey) { customThemeColor = Color(hex: hex) }
         isUsingCustomThemeColor = prefs.bool(forKey: customThemeColorEnabledKey)
+        isUsingWallpaperThemeColor = prefs.bool(forKey: wallpaperThemeColorEnabledKey)
+        if let hex = prefs.string(forKey: wallpaperCardColorHexKey) { wallpaperCardColor = Color(hex: hex) }
+        isUsingWallpaperCardColor = prefs.bool(forKey: wallpaperCardColorEnabledKey)
+        loadGoalQuickAddAmounts()
+        loadCustomWatchlists()
+        loadDismissedReviewItemIDs()
         loadWallpaperProfiles()
         loadWallpaperAppearance()
         loadWallpaperTheme()
@@ -90,6 +138,8 @@ final class AppViewModel {
     var analysisHistory: [AnalysisHistory] = []
     var recurringSubscriptions: [RecurringSubscription] = []
     var user: User?
+    var customWatchlists: [String] = []
+    var dismissedReviewItemIDs: Set<String> = []
 
     // Loading
     var isLoading = true
@@ -101,6 +151,10 @@ final class AppViewModel {
     var currentWeeklyResult: AIResult?
     var currentMonthlyResult: AIResult?
     var currentForecastResult: AIResult?
+    @ObservationIgnored private var cachedLocalMoneyLogicV2Dashboard: MoneyLogicV2DashboardSummary?
+    @ObservationIgnored private var cachedLocalMoneyLogicV2Revision: Int?
+    @ObservationIgnored private var cachedLocalMoneyLogicV2MonthIdentifier: String?
+    @ObservationIgnored private var localMoneyLogicV2Revision = 0
 
     func loadLocalData() {
         let decoder = JSONDecoder()
@@ -133,10 +187,11 @@ final class AppViewModel {
               budget.budgetAlertsEnabled == true,
               budget.budgetAlertsPushEnabled == true else { return }
         let svc = NotificationService()
-        svc.scheduleBudgetAlert(summary: spendSummary, currency: currency)
+        svc.scheduleBudgetAlert(summary: dashboardSpendSummary, currency: currency)
     }
 
     func saveLocalData() {
+        invalidateLocalMoneyLogicV2Cache()
         if let data = try? JSONEncoder().encode(budgets) {
             prefs.set(data, forKey: "local_budgets")
         }
@@ -155,14 +210,169 @@ final class AppViewModel {
         prefs.synchronize()
     }
 
+    @discardableResult
+    func importTransactionsCSV(content: String) -> Int {
+        let rows = MoneyLogicV2CSVImport.parse(content)
+        guard !rows.isEmpty else { return 0 }
+
+        let headers = rows[0]
+        let hasHeader = headers.map(csvHeaderKey).contains("date")
+        let dataRows = hasHeader ? Array(rows.dropFirst()) : rows
+        var importedCount = 0
+
+        for columns in dataRows where columns.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            let row = hasHeader ? csvRow(headers: headers, columns: columns) : [:]
+
+            guard let date = csvValue(["date"], row: row, columns: columns, fallbackIndex: 0) else { continue }
+            let typeText = csvValue(["type", "transaction_type"], row: row, columns: columns, fallbackIndex: 1) ?? ""
+            let amount = csvSignedAmount(row: row, columns: columns)
+            guard let amount, abs(amount) > 0 else { continue }
+
+            let tagText = csvValue(["tags", "tag"], row: row, columns: columns, fallbackIndex: 11)
+            var tags = csvTags(from: tagText)
+            let account = csvValue(["account", "account_name"], row: row, columns: columns, fallbackIndex: 9)
+            if let account, !account.isEmpty {
+                tags.append("account:\(csvHeaderKey(account))")
+            }
+
+            let type = csvLegacyTransactionType(typeText: typeText, amount: amount, tags: tags)
+            let rawCategory = csvValue(["category", "classification"], row: row, columns: columns, fallbackIndex: 2)
+            let category = AppCategory.normalizedCategoryID(for: rawCategory, type: type)
+            let merchant = csvValue(["merchant", "payee", "vendor"], row: row, columns: columns, fallbackIndex: 5)
+            let note = csvValue(["note", "notes", "memo"], row: row, columns: columns, fallbackIndex: 4)
+            let description = csvValue(["description", "details"], row: row, columns: columns, fallbackIndex: 10)
+            let normalizedType = csvHeaderKey(typeText)
+            if !normalizedType.isEmpty {
+                tags.append(normalizedType)
+            }
+            if category == "subscriptions" || tags.contains("subscription") {
+                tags.append("subscription")
+            }
+
+            let origCurrency = csvValue(["original_currency", "originalcurrency"], row: row, columns: columns, fallbackIndex: 6)
+            let origAmount = csvValue(["original_amount", "originalamount"], row: row, columns: columns, fallbackIndex: 7).flatMap(csvParseAmount)
+            let exchangeRate = csvValue(["exchange_rate", "exchangerate"], row: row, columns: columns, fallbackIndex: 8).flatMap(csvParseAmount)
+
+            let txn = Transaction(
+                id: "import-\(UUID().uuidString)",
+                amount: abs(amount),
+                type: type,
+                category: category,
+                note: note,
+                date: date,
+                merchant: merchant,
+                description: description,
+                isRecurring: tags.contains("subscription"),
+                tags: Array(Set(tags)).sorted(),
+                originalCurrency: origCurrency?.isEmpty == false ? origCurrency : nil,
+                originalAmount: origAmount,
+                exchangeRate: exchangeRate,
+                baseCurrency: origCurrency?.isEmpty == false ? currency : nil
+            )
+            transactions.append(txn)
+            importedCount += 1
+        }
+
+        if importedCount > 0 {
+            saveLocalData()
+        }
+        return importedCount
+    }
+
+    private func csvRow(headers: [String], columns: [String]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: headers.enumerated().map { index, header in
+            (csvHeaderKey(header), index < columns.count ? columns[index] : "")
+        })
+    }
+
+    private func csvValue(
+        _ names: [String],
+        row: [String: String],
+        columns: [String],
+        fallbackIndex: Int
+    ) -> String? {
+        for name in names {
+            if let value = row[csvHeaderKey(name)]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        guard fallbackIndex < columns.count else { return nil }
+        let value = columns[fallbackIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func csvHeaderKey(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    }
+
+    private func csvSignedAmount(row: [String: String], columns: [String]) -> Double? {
+        if let amountText = csvValue(["amount", "transaction_amount"], row: row, columns: columns, fallbackIndex: 3),
+           let amount = csvParseAmount(amountText) {
+            return amount
+        }
+
+        let debit = csvValue(["debit", "withdrawal", "spent"], row: row, columns: columns, fallbackIndex: Int.max)
+            .flatMap(csvParseAmount) ?? 0
+        let credit = csvValue(["credit", "deposit", "received"], row: row, columns: columns, fallbackIndex: Int.max)
+            .flatMap(csvParseAmount) ?? 0
+        if debit != 0 || credit != 0 {
+            return credit - debit
+        }
+        return nil
+    }
+
+    private func csvParseAmount(_ rawValue: String) -> Double? {
+        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var negative = false
+        if value.hasPrefix("("), value.hasSuffix(")") {
+            negative = true
+            value.removeFirst()
+            value.removeLast()
+        }
+        value = value
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: "¥", with: "")
+            .replacingOccurrences(of: "€", with: "")
+            .replacingOccurrences(of: "£", with: "")
+        guard let amount = Double(value) else { return nil }
+        return negative ? -amount : amount
+    }
+
+    private func csvTags(from value: String?) -> [String] {
+        guard let value else { return [] }
+        return value
+            .split { $0 == "," || $0 == ";" || $0 == "|" }
+            .map { csvHeaderKey(String($0)) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func csvLegacyTransactionType(typeText: String, amount: Double, tags: [String]) -> Transaction.TransactionType {
+        let type = csvHeaderKey(typeText)
+        if type.contains("income") || type.contains("paycheck") || type.contains("refund") || type.contains("reimbursement") {
+            return .income
+        }
+        if type.contains("transfer") || type.contains("credit_card_payment") {
+            return tags.contains(where: { $0.hasSuffix("_in") || $0.contains("payment_in") || $0.contains("transfer_in") }) ? .income : .expense
+        }
+        if type.contains("expense") || type.contains("adjustment") {
+            return .expense
+        }
+        return amount >= 0 ? .income : .expense
+    }
+
     // Preferences (synced from Budget)
     var theme: AppTheme = .sage
     var wallpaperPalette: WallpaperPalette?
     var wallpaperImageData: Data?
     var wallpaperUIImage: UIImage?
-    var wallpaperVisibility: Double = 84
-    var wallpaperBlurRadius: Double = 6
-    var wallpaperPanelOpacity: Double = 64
+    var wallpaperVisibility: Double = 100
+    var wallpaperBlurRadius: Double = 0
+    var wallpaperPanelOpacity: Double = 85
     var wallpaperZoomPercent: Double = 0
     var wallpaperHorizontalFrame: Double = 50
     var wallpaperVerticalFrame: Double = 50
@@ -173,22 +383,46 @@ final class AppViewModel {
     var font: AppFont = .inter
     var customThemeColor: Color = Color(hex: "0d9488")
     var isUsingCustomThemeColor = false
+    var isUsingWallpaperThemeColor = false
+    var wallpaperCardColor: Color = Color(hex: "0d9488")
+    var isUsingWallpaperCardColor = false
+    var goalQuickAddAmounts: [Double] = [10, 50, 100, 500]
     var currency: String = "USD"
     var language: String = "en" {
         didSet { CurrencyFormat.language = language }
     }
     private(set) var hiddenDisplayBlocks: Set<AppDisplayBlock> = []
+    private(set) var homeDisplayBlockOrder: [AppDisplayBlock] = AppViewModel.defaultHomeDisplayBlockOrder
+
+    static let defaultHomeDisplayBlockOrder: [AppDisplayBlock] = [
+        .homeSafeToSpend,
+        .homeMonthlyPulse,
+        .homeReviewQueue,
+        .homeWatchlists,
+        .homeTopCategories,
+        .homeRecentActivity
+    ]
 
     var primaryColor: Color {
-        isUsingCustomThemeColor ? customThemeColor : theme.primaryColor
+        if isUsingWallpaperThemeColor, let wallpaperPalette {
+            return wallpaperPalette.primaryColor
+        }
+        return isUsingCustomThemeColor ? customThemeColor : theme.primaryColor
     }
 
     var accentColor: Color {
-        isUsingCustomThemeColor ? customThemeColor.opacity(0.62) : theme.accentColor
+        if isUsingWallpaperThemeColor, let wallpaperPalette {
+            return wallpaperPalette.accentColor
+        }
+        return isUsingCustomThemeColor ? customThemeColor.opacity(0.62) : theme.accentColor
     }
 
     var backgroundColor: Color {
         wallpaperPalette?.backgroundColor ?? Color(.systemGroupedBackground)
+    }
+
+    var cardBoxColor: Color {
+        hasWallpaperTheme && isUsingWallpaperCardColor ? wallpaperCardColor : primaryColor
     }
 
     var gradientColors: [Color] {
@@ -207,11 +441,52 @@ final class AppViewModel {
     func selectTheme(_ appTheme: AppTheme) {
         theme = appTheme
         isUsingCustomThemeColor = false
+        isUsingWallpaperThemeColor = false
     }
 
     func setCustomThemeColor(_ color: Color) {
         customThemeColor = color
         isUsingCustomThemeColor = true
+        isUsingWallpaperThemeColor = false
+    }
+
+    func useWallpaperThemeColors() {
+        guard wallpaperPalette != nil else { return }
+        isUsingCustomThemeColor = false
+        isUsingWallpaperThemeColor = true
+    }
+
+    var wallpaperThemeColorOptions: [Color] {
+        guard let wallpaperPalette else { return [] }
+        return wallpaperThemeHexOptions(for: wallpaperPalette).map(Color.init(hex:))
+    }
+
+    var wallpaperCardColorOptions: [Color] {
+        guard let wallpaperPalette else { return [] }
+        return wallpaperCardHexOptions(for: wallpaperPalette).map(Color.init(hex:))
+    }
+
+    func selectWallpaperThemeColor(_ color: Color, usesExtractedPalette: Bool) {
+        if usesExtractedPalette {
+            useWallpaperThemeColors()
+        } else {
+            setCustomThemeColor(color)
+        }
+        updateActiveWallpaperProfileColorChoices()
+        savePreferencesToDisk()
+    }
+
+    func selectWallpaperCardColor(_ color: Color) {
+        wallpaperCardColor = color
+        isUsingWallpaperCardColor = true
+        updateActiveWallpaperProfileColorChoices()
+        savePreferencesToDisk()
+    }
+
+    func setGoalQuickAddAmount(at index: Int, amount: Double) {
+        guard goalQuickAddAmounts.indices.contains(index), amount > 0 else { return }
+        goalQuickAddAmounts[index] = amount
+        saveGoalQuickAddAmounts()
     }
 
     var wallpaperVisibilityOpacity: Double {
@@ -241,6 +516,10 @@ final class AppViewModel {
         !hiddenDisplayBlocks.contains(block)
     }
 
+    var visibleHomeBlocks: [AppDisplayBlock] {
+        normalizedHomeDisplayBlockOrder().filter(isBlockVisible)
+    }
+
     func setBlock(_ block: AppDisplayBlock, visible: Bool) {
         if visible {
             hiddenDisplayBlocks.remove(block)
@@ -250,18 +529,249 @@ final class AppViewModel {
         saveDisplayBlockPreferences()
     }
 
-    func resetVisibleBlocks() {
-        hiddenDisplayBlocks.removeAll()
+    func moveHomeBlock(fromOffsets source: IndexSet, toOffset destination: Int) {
+        var order = normalizedHomeDisplayBlockOrder()
+        order.move(fromOffsets: source, toOffset: destination)
+        homeDisplayBlockOrder = order
         saveDisplayBlockPreferences()
+    }
+
+    func resetHomeBlockLayout() {
+        for block in Self.defaultHomeDisplayBlockOrder {
+            hiddenDisplayBlocks.remove(block)
+        }
+        homeDisplayBlockOrder = Self.defaultHomeDisplayBlockOrder
+        saveDisplayBlockPreferences()
+    }
+
+    func addCustomWatchlist(_ rawName: String) {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        guard !customWatchlists.contains(where: { $0.localizedCaseInsensitiveCompare(name) == .orderedSame }) else { return }
+        customWatchlists.insert(name, at: 0)
+        customWatchlists = Array(customWatchlists.prefix(5))
+        invalidateLocalMoneyLogicV2Cache()
+        saveCustomWatchlists()
+    }
+
+    func deleteCustomWatchlist(_ name: String) {
+        customWatchlists.removeAll { $0.localizedCaseInsensitiveCompare(name) == .orderedSame }
+        invalidateLocalMoneyLogicV2Cache()
+        saveCustomWatchlists()
+    }
+
+    private func saveCustomWatchlists() {
+        prefs.set(customWatchlists, forKey: customWatchlistsKey)
+    }
+
+    private func loadCustomWatchlists() {
+        let values = prefs.stringArray(forKey: customWatchlistsKey) ?? []
+        var seen: Set<String> = []
+        customWatchlists = values.compactMap { value in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalized = MoneyLogicV2Text.normalizedMerchant(trimmed)
+            guard !trimmed.isEmpty, !seen.contains(normalized) else { return nil }
+            seen.insert(normalized)
+            return trimmed
+        }
+    }
+
+    var reviewQueue: [MoneyLogicV2ReviewItem] {
+        localMoneyLogicV2Dashboard.reviewQueue.filter { !dismissedReviewItemIDs.contains($0.id) }
+    }
+
+    func dismissReviewItem(_ item: MoneyLogicV2ReviewItem) {
+        dismissedReviewItemIDs.insert(item.id)
+        saveDismissedReviewItemIDs()
+    }
+
+    func recurringReviewDisplay(for item: MoneyLogicV2ReviewItem) -> ReviewRecurringDisplay? {
+        guard item.kind == .possibleRecurring,
+              let series = recurringCandidate(for: item) else {
+            return nil
+        }
+        return ReviewRecurringDisplay(
+            name: series.name,
+            cadence: series.cadence,
+            amount: series.expectedAmount,
+            nextDueDate: series.nextDueDate
+        )
+    }
+
+    func acceptReviewTransfer(_ item: MoneyLogicV2ReviewItem) {
+        guard item.kind == .possibleTransfer else {
+            dismissReviewItem(item)
+            return
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let transactionIDs = Set(item.transactionIds)
+        let category = item.title == "Possible credit card payment" ? "credit_card_payment" : "transfer"
+        var changed = false
+
+        for index in transactions.indices where transactionIDs.contains(transactions[index].id) {
+            var tags = Set(transactions[index].tags ?? [])
+            tags.insert("transfer")
+            tags.insert("review_confirmed")
+            tags.insert("review:\(item.id)")
+            transactions[index].category = category
+            transactions[index].tags = Array(tags).sorted()
+            transactions[index].updatedDate = now
+            changed = true
+        }
+
+        dismissReviewItem(item)
+        if changed {
+            saveLocalData()
+        }
+    }
+
+    func acceptReviewRefund(_ item: MoneyLogicV2ReviewItem) {
+        guard item.kind == .possibleRefund,
+              let refundID = item.transactionIds.first,
+              let expenseID = item.transactionIds.dropFirst().first else {
+            dismissReviewItem(item)
+            return
+        }
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let originalCategory = transactions.first(where: { $0.id == expenseID })?.category
+        let marker = item.title == "Possible reimbursement" ? "reimbursement" : "refund"
+        var changed = false
+
+        if let refundIndex = transactions.firstIndex(where: { $0.id == refundID }) {
+            var tags = Set(transactions[refundIndex].tags ?? [])
+            tags.insert(marker)
+            tags.insert("\(marker)_of:\(expenseID)")
+            tags.insert("review_confirmed")
+            transactions[refundIndex].category = originalCategory ?? marker
+            transactions[refundIndex].tags = Array(tags).sorted()
+            transactions[refundIndex].updatedDate = now
+            changed = true
+        }
+
+        if let expenseIndex = transactions.firstIndex(where: { $0.id == expenseID }) {
+            var tags = Set(transactions[expenseIndex].tags ?? [])
+            tags.insert("linked_\(marker):\(refundID)")
+            transactions[expenseIndex].tags = Array(tags).sorted()
+            transactions[expenseIndex].updatedDate = now
+            changed = true
+        }
+
+        dismissReviewItem(item)
+        if changed {
+            saveLocalData()
+        }
+    }
+
+    func acceptReviewRecurring(_ item: MoneyLogicV2ReviewItem) {
+        guard item.kind == .possibleRecurring,
+              let series = recurringCandidate(for: item) else {
+            dismissReviewItem(item)
+            return
+        }
+
+        let normalizedName = MoneyLogicV2Text.normalizedMerchant(series.name)
+        let alreadyTracked = recurringSubscriptions.contains { subscription in
+            subscription.isActive &&
+                MoneyLogicV2Text.normalizedMerchant(subscription.name) == normalizedName &&
+                abs(subscription.amount - series.expectedAmount) < 0.01
+        }
+        guard !alreadyTracked else {
+            dismissReviewItem(item)
+            return
+        }
+
+        let interval = billingInterval(for: series.cadence)
+        let now = ISO8601DateFormatter().string(from: Date())
+        let subscription = RecurringSubscription(
+            id: UUID().uuidString,
+            name: series.name,
+            amount: series.expectedAmount,
+            currencyCode: currency,
+            category: series.categoryId ?? "subscriptions",
+            note: loc("Detected from local transactions"),
+            startDate: dateString(series.lastMatchedDate ?? Date()),
+            nextBillingDate: dateString(series.nextDueDate),
+            interval: interval.interval,
+            customIntervalDays: interval.customDays,
+            isActive: true,
+            createdDate: now,
+            updatedDate: now
+        )
+
+        recurringSubscriptions.insert(subscription, at: 0)
+        dismissReviewItem(item)
+        saveLocalData()
+    }
+
+    private func saveDismissedReviewItemIDs() {
+        prefs.set(Array(dismissedReviewItemIDs).sorted(), forKey: dismissedReviewItemIDsKey)
+    }
+
+    private func loadDismissedReviewItemIDs() {
+        dismissedReviewItemIDs = Set(prefs.stringArray(forKey: dismissedReviewItemIDsKey) ?? [])
+    }
+
+    private func recurringCandidate(for item: MoneyLogicV2ReviewItem) -> MoneyLogicV2RecurringSeries? {
+        let categories = MoneyLogicV2DataAdapter.defaultCategories(
+            budget: currentBudget,
+            goals: goals,
+            transactions: transactions,
+            currency: currency
+        )
+        let v2Transactions = transactions.map {
+            MoneyLogicV2DataAdapter.makeTransaction($0, currency: currency, categories: categories)
+        }
+        return MoneyLogicV2Detection
+            .detectRecurringSeries(transactions: v2Transactions)
+            .first { "recurring-\($0.id)" == item.id }
+    }
+
+    private func billingInterval(for cadence: MoneyLogicV2Cadence) -> (interval: RecurringSubscription.BillingInterval, customDays: Int?) {
+        switch cadence {
+        case .weekly:
+            return (.weekly, nil)
+        case .biweekly:
+            return (.biweekly, nil)
+        case .monthly, .semimonthly:
+            return (.monthly, nil)
+        case .quarterly:
+            return (.custom, 91)
+        case .yearly:
+            return (.custom, 365)
+        case .custom:
+            return (.custom, 30)
+        }
     }
 
     private func saveDisplayBlockPreferences() {
         prefs.set(hiddenDisplayBlocks.map(\.rawValue).sorted(), forKey: hiddenDisplayBlocksKey)
+        prefs.set(normalizedHomeDisplayBlockOrder().map(\.rawValue), forKey: homeDisplayBlockOrderKey)
     }
 
     private func loadDisplayBlockPreferences() {
         let rawValues = prefs.stringArray(forKey: hiddenDisplayBlocksKey) ?? []
         hiddenDisplayBlocks = Set(rawValues.compactMap(AppDisplayBlock.init(rawValue:)))
+        let orderedRawValues = prefs.stringArray(forKey: homeDisplayBlockOrderKey) ?? []
+        let loadedOrder = orderedRawValues.compactMap(AppDisplayBlock.init(rawValue:)).filter(Self.defaultHomeDisplayBlockOrder.contains)
+        homeDisplayBlockOrder = normalizedHomeDisplayBlockOrder(from: loadedOrder)
+    }
+
+    private func normalizedHomeDisplayBlockOrder() -> [AppDisplayBlock] {
+        normalizedHomeDisplayBlockOrder(from: homeDisplayBlockOrder)
+    }
+
+    private func normalizedHomeDisplayBlockOrder(from order: [AppDisplayBlock]) -> [AppDisplayBlock] {
+        var seen: Set<AppDisplayBlock> = []
+        var normalized: [AppDisplayBlock] = []
+        for block in order where Self.defaultHomeDisplayBlockOrder.contains(block) && !seen.contains(block) {
+            normalized.append(block)
+            seen.insert(block)
+        }
+        for block in Self.defaultHomeDisplayBlockOrder where !seen.contains(block) {
+            normalized.append(block)
+        }
+        return normalized
     }
 
     // Developer mode
@@ -272,22 +782,207 @@ final class AppViewModel {
 
     // Usage limit alerts
     private let aiClient = AIClient.shared
+    private let aiUserFacingTimeoutNanoseconds: UInt64 = 7_000_000_000
     let revenueCat = RevenueCatService()
     let proStatus = ProStatusService()
 
     var currentBudget: Budget? { budgets.first }
 
-    var spendSummary: SpendSummary {
-        let txns = transactions
-        return SpendCalculator.getSpendSummary(
-            transactions: txns,
-            budget: currentBudget
+    var localMoneyLogicV2Dashboard: MoneyLogicV2DashboardSummary {
+        let monthIdentifier = MoneyLogicV2Calculations.monthIdentifier(for: Date())
+        if let cachedLocalMoneyLogicV2Dashboard,
+           cachedLocalMoneyLogicV2Revision == localMoneyLogicV2Revision,
+           cachedLocalMoneyLogicV2MonthIdentifier == monthIdentifier {
+            return cachedLocalMoneyLogicV2Dashboard
+        }
+
+        let input = MoneyLogicV2DataAdapter.dashboardInput(
+            budget: currentBudget,
+            transactions: transactions,
+            goals: goals,
+            recurringSubscriptions: recurringSubscriptions,
+            customWatchlists: customWatchlists,
+            currency: currency,
+            mode: .plan
+        )
+        let dashboard = LocalFirstMoneyLogicV2Service().getDashboardSummary(input: input)
+        cachedLocalMoneyLogicV2Revision = localMoneyLogicV2Revision
+        cachedLocalMoneyLogicV2MonthIdentifier = monthIdentifier
+        cachedLocalMoneyLogicV2Dashboard = dashboard
+        return dashboard
+    }
+
+    var dashboardSpendSummary: SpendSummary {
+        if let startFromTodaySummary {
+            let protectedMoney = startFromTodaySummary.billsDueBeforeNextIncome
+                + startFromTodaySummary.subscriptionCommitmentsBeforeNextIncome
+                + startFromTodaySummary.savingsDueBeforeNextIncome
+                + startFromTodaySummary.moneyToKeepUntouched
+            let denominator = max(startFromTodaySummary.currentMoney, protectedMoney + max(startFromTodaySummary.trueSafeToSpend, 0))
+            return SpendSummary(
+                spent: protectedMoney,
+                incomeThisMonth: startFromTodaySummary.nextIncomeAmount,
+                monthlyDisposable: denominator,
+                remaining: startFromTodaySummary.trueSafeToSpend,
+                daysLeft: startFromTodaySummary.daysUntilNextIncome,
+                safeDaily: startFromTodaySummary.dailySafeToSpend,
+                paceDiff: 0,
+                expectedSpent: protectedMoney,
+                dayOfMonth: startFromTodaySummary.daysUntilNextIncome,
+                totalDays: startFromTodaySummary.daysUntilNextIncome,
+                spendPercent: denominator > 0 ? min((protectedMoney / denominator) * 100, 100) : 0
+            )
+        }
+
+        let dashboard = localMoneyLogicV2Dashboard
+        let month = dashboard.budgetMonth
+        let includedSpend = month.fixedPaid
+            + month.flexibleSpent
+            + month.nonMonthlySpent
+            + month.goalContributionsActual
+            + month.debtMinimumsPaid
+            + month.otherSpent
+        let monthlyPlan = max(
+            month.fixedPlanned
+                + month.flexibleBudget
+                + month.nonMonthlySetAsidePlanned
+                + month.goalContributionsPlanned
+                + month.debtMinimumsPlanned,
+            month.expectedIncome + month.openingBudgetCash
+        )
+
+        return SpendSummary(
+            spent: includedSpend,
+            incomeThisMonth: month.actualIncome,
+            monthlyDisposable: monthlyPlan,
+            remaining: month.safeToSpend,
+            daysLeft: dashboard.safeToSpend.daysRemaining,
+            safeDaily: dashboard.safeToSpend.dailySafeToSpend,
+            paceDiff: dashboard.flexibleSpending.paceDelta,
+            expectedSpent: dashboard.flexibleSpending.paceExpected,
+            dayOfMonth: Calendar.current.component(.day, from: Date()),
+            totalDays: Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30,
+            spendPercent: monthlyPlan > 0 ? min((includedSpend / monthlyPlan) * 100, 100) : 0
         )
     }
 
+    var startFromTodaySummary: StartFromTodaySummary? {
+        guard let budget = currentBudget else {
+            return nil
+        }
+
+        let currentMoney = (budget.currentSpendableBalance ?? 0) + (budget.cashOnHand ?? 0)
+        let nextDate = activeNextIncomeDate(for: budget)
+        let subscriptionCommitments = subscriptionCommitmentsBeforeNextIncome(nextDate: nextDate)
+        let enteredBills = budget.billsDueBeforeNextIncome ?? 0
+        let savingsDue = budget.savingsDueBeforeNextIncome ?? 0
+        let protectedMoney = enteredBills
+            + subscriptionCommitments
+            + savingsDue
+            + (budget.moneyToKeepUntouched ?? 0)
+        let safe = MoneyLogicV2Calculations.safeUntilNextIncome(
+            currentSpendableBalance: budget.currentSpendableBalance ?? 0,
+            cashOnHand: budget.cashOnHand ?? 0,
+            billsDueBeforeNextIncome: enteredBills + subscriptionCommitments,
+            savingsDueBeforeNextIncome: savingsDue,
+            requiredBuffer: budget.moneyToKeepUntouched ?? 0,
+            nextIncomeDate: nextDate
+        )
+
+        return StartFromTodaySummary(
+            trueSafeToSpend: safe.trueSafeToSpend,
+            displaySafeToSpend: safe.displaySafeToSpend,
+            dailySafeToSpend: safe.dailySafeToSpend,
+            daysUntilNextIncome: safe.daysRemaining,
+            currentMoney: currentMoney,
+            billsDueBeforeNextIncome: enteredBills,
+            subscriptionCommitmentsBeforeNextIncome: subscriptionCommitments,
+            savingsDueBeforeNextIncome: savingsDue,
+            moneyToKeepUntouched: budget.moneyToKeepUntouched ?? 0,
+            totalProtectedBeforeNextIncome: protectedMoney,
+            nextIncomeAmount: budget.nextIncomeAmount ?? budget.monthlyIncome,
+            nextIncomeDate: nextDate,
+            explanation: safe.explanation
+        )
+    }
+
+    static func storedDateString(from date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    static func dateFromStoredString(_ value: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: value) {
+            return date
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: value)
+    }
+
+    private func activeNextIncomeDate(for budget: Budget, today: Date = Date(), calendar: Calendar = .current) -> Date {
+        if let stored = budget.nextIncomeDate.flatMap(Self.dateFromStoredString),
+           calendar.startOfDay(for: stored) >= calendar.startOfDay(for: today) {
+            return stored
+        }
+        return nextPaydayDate(day: budget.payDay ?? 1, from: today, calendar: calendar)
+    }
+
+    private func subscriptionCommitmentsBeforeNextIncome(nextDate: Date, today: Date = Date(), calendar: Calendar = .current) -> Double {
+        let start = calendar.startOfDay(for: today)
+        let horizon = calendar.startOfDay(for: nextDate)
+        guard horizon >= start else { return 0 }
+
+        return recurringSubscriptions
+            .filter { subscription in
+                guard subscription.isActive else { return false }
+                guard subscription.currencyCode == currency else { return false }
+                guard let dueDate = Self.dateFromStoredString(subscription.nextBillingDate) else { return false }
+                let dueDay = calendar.startOfDay(for: dueDate)
+                return dueDay >= start && dueDay <= horizon
+            }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    private func nextPaydayDate(day: Int, from today: Date = Date(), calendar: Calendar = .current) -> Date {
+        let safeDay = min(max(day, 1), 31)
+        var components = calendar.dateComponents([.year, .month], from: today)
+        let daysInCurrentMonth = calendar.range(of: .day, in: .month, for: today)?.count ?? 30
+        components.day = min(safeDay, daysInCurrentMonth)
+        let currentMonthPayday = calendar.date(from: components) ?? today
+        if calendar.startOfDay(for: currentMonthPayday) >= calendar.startOfDay(for: today) {
+            return currentMonthPayday
+        }
+        guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: today) else {
+            return currentMonthPayday
+        }
+        components = calendar.dateComponents([.year, .month], from: nextMonth)
+        let daysInNextMonth = calendar.range(of: .day, in: .month, for: nextMonth)?.count ?? 30
+        components.day = min(safeDay, daysInNextMonth)
+        return calendar.date(from: components) ?? currentMonthPayday
+    }
+
+    private func invalidateLocalMoneyLogicV2Cache() {
+        localMoneyLogicV2Revision &+= 1
+        cachedLocalMoneyLogicV2Dashboard = nil
+        cachedLocalMoneyLogicV2Revision = nil
+        cachedLocalMoneyLogicV2MonthIdentifier = nil
+    }
+
     var categoryBreakdown: [CategoryBreakdown] {
-        let txns = transactions
-        return SpendCalculator.getCategoryBreakdown(transactions: txns)
+        var breakdown: [CategoryBreakdown] = []
+        for summary in localMoneyLogicV2Dashboard.categorySummaries {
+            guard summary.spentThisMonth > 0 else { continue }
+            switch summary.category.bucketType {
+            case .income, .transfer, .excluded:
+                continue
+            default:
+                breakdown.append(CategoryBreakdown(id: summary.category.id, amount: summary.spentThisMonth))
+            }
+        }
+        return breakdown.sorted { $0.amount > $1.amount }
     }
 
     var recentTransactions: [Transaction] {
@@ -365,25 +1060,101 @@ final class AppViewModel {
         goals = []
         analysisHistory = []
         recurringSubscriptions = []
+        user = nil
+        error = nil
+        navigateToTab = nil
+        initialAISubTab = nil
         currentDailyResult = nil
         currentWeeklyResult = nil
         currentMonthlyResult = nil
         currentForecastResult = nil
         theme = .sage
         isUsingCustomThemeColor = false
+        isUsingWallpaperThemeColor = false
         customThemeColor = Color(hex: "0d9488")
+        wallpaperCardColor = Color(hex: "0d9488")
+        isUsingWallpaperCardColor = false
         colorMode = .system
         font = .inter
         currency = "USD"
         language = savedLanguage
         clearWallpaperTheme()
+        clearAllWallpaperProfiles()
         hiddenDisplayBlocks.removeAll()
-        saveDisplayBlockPreferences()
+        homeDisplayBlockOrder = Self.defaultHomeDisplayBlockOrder
+        customWatchlists = []
+        dismissedReviewItemIDs = []
+        goalQuickAddAmounts = defaultGoalQuickAddAmounts
+        isDeveloperMode = false
         hasProSubscription = false
+        clearResettablePreferenceKeys()
+        savePreferencesToDisk()
         saveLocalData()
+        clearScheduledAppNotifications()
         let cache = CacheService.shared
         Task { await cache.clear() }
         needsResetToSetup = true
+    }
+
+    private func clearResettablePreferenceKeys() {
+        [
+            "local_budgets",
+            "local_transactions",
+            "local_goals",
+            "local_analysis_history",
+            "local_recurring_subscriptions",
+            "usage_counts",
+            "usage_month",
+            "has_pro_subscription",
+            developerModeKey,
+            hiddenDisplayBlocksKey,
+            homeDisplayBlockOrderKey,
+            "app_theme",
+            "app_color_mode",
+            "app_font",
+            "app_currency",
+            customThemeColorHexKey,
+            customThemeColorEnabledKey,
+            wallpaperThemeColorEnabledKey,
+            wallpaperCardColorHexKey,
+            wallpaperCardColorEnabledKey,
+            goalQuickAddAmountsKey,
+            wallpaperPaletteKey,
+            wallpaperVisibilityKey,
+            wallpaperBlurRadiusKey,
+            wallpaperPanelOpacityKey,
+            wallpaperZoomPercentKey,
+            wallpaperHorizontalFrameKey,
+            wallpaperVerticalFrameKey,
+            wallpaperProfilesKey,
+            activeWallpaperProfileIDKey,
+            customWatchlistsKey,
+            dismissedReviewItemIDsKey,
+        ].forEach { prefs.removeObject(forKey: $0) }
+        prefs.synchronize()
+    }
+
+    private func clearAllWallpaperProfiles() {
+        for profile in wallpaperProfiles {
+            if let url = wallpaperProfileFileURL(fileName: profile.imageFileName) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        wallpaperProfiles = []
+        wallpaperProfileImages = [:]
+        activeWallpaperProfileID = nil
+        prefs.removeObject(forKey: wallpaperProfilesKey)
+        prefs.removeObject(forKey: activeWallpaperProfileIDKey)
+        if let folder = wallpaperProfilesFolderURL(createIfNeeded: false) {
+            try? FileManager.default.removeItem(at: folder)
+        }
+        prefs.synchronize()
+    }
+
+    private func clearScheduledAppNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
     }
 
     func importWallpaperTheme(
@@ -402,9 +1173,11 @@ final class AppViewModel {
             name: nextWallpaperProfileName(),
             imageFileName: "\(profileID).jpg",
             palette: prepared.palette,
-            visibility: 84,
-            blurRadius: 6,
-            panelOpacity: 64,
+            themeColorHex: nil,
+            cardColorHex: defaultWallpaperCardColorHex(for: prepared.palette),
+            visibility: 100,
+            blurRadius: 0,
+            panelOpacity: 85,
             zoomPercent: clampedPercent(zoomPercent),
             horizontalFrame: clampedPercent(horizontalFrame),
             verticalFrame: clampedPercent(verticalFrame),
@@ -444,14 +1217,54 @@ final class AppViewModel {
         wallpaperProfiles[index].zoomPercent = clampedPercent(wallpaperZoomPercent)
         wallpaperProfiles[index].horizontalFrame = clampedPercent(wallpaperHorizontalFrame)
         wallpaperProfiles[index].verticalFrame = clampedPercent(wallpaperVerticalFrame)
+        wallpaperProfiles[index].themeColorHex = isUsingWallpaperThemeColor ? nil : hexString(from: customThemeColor)
+        wallpaperProfiles[index].cardColorHex = isUsingWallpaperCardColor ? hexString(from: wallpaperCardColor) : nil
         saveWallpaperAppearance()
         saveWallpaperProfiles()
+    }
+
+    func updateCurrentWallpaperCrop(
+        zoomPercent: Double,
+        horizontalFrame: Double,
+        verticalFrame: Double
+    ) {
+        wallpaperZoomPercent = clampedPercent(zoomPercent)
+        wallpaperHorizontalFrame = clampedPercent(horizontalFrame)
+        wallpaperVerticalFrame = clampedPercent(verticalFrame)
+        saveWallpaperAppearance()
+    }
+
+    func deleteWallpaperProfile(_ profile: WallpaperThemeProfile) {
+        if let url = wallpaperProfileFileURL(fileName: profile.imageFileName) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        wallpaperProfiles.removeAll { $0.id == profile.id }
+        wallpaperProfileImages.removeValue(forKey: profile.id)
+        saveWallpaperProfiles()
+
+        guard profile.id == activeWallpaperProfileID else { return }
+        if let nextProfile = wallpaperProfiles.first,
+           let imageData = wallpaperProfileImageData(for: nextProfile) {
+            applyWallpaperProfile(nextProfile, imageData: imageData)
+        } else {
+            clearWallpaperTheme()
+        }
     }
 
     private func applyWallpaperProfile(_ profile: WallpaperThemeProfile, imageData: Data) {
         wallpaperImageData = imageData
         wallpaperUIImage = UIImage(data: imageData)
         wallpaperPalette = profile.palette
+        if let themeColorHex = profile.themeColorHex {
+            customThemeColor = Color(hex: themeColorHex)
+            isUsingCustomThemeColor = true
+            isUsingWallpaperThemeColor = false
+        } else {
+            isUsingWallpaperThemeColor = true
+            isUsingCustomThemeColor = false
+        }
+        wallpaperCardColor = Color(hex: profile.cardColorHex ?? defaultWallpaperCardColorHex(for: profile.palette))
+        isUsingWallpaperCardColor = true
         activeWallpaperProfileID = profile.id
         wallpaperVisibility = clampedPercent(profile.visibility)
         wallpaperBlurRadius = clampedPercent(profile.blurRadius)
@@ -462,6 +1275,7 @@ final class AppViewModel {
         saveWallpaperPalette()
         persistWallpaperAppearance(updateActiveProfile: false)
         prefs.set(profile.id, forKey: activeWallpaperProfileIDKey)
+        savePreferencesToDisk()
         prefs.synchronize()
     }
 
@@ -474,9 +1288,14 @@ final class AppViewModel {
         wallpaperUIImage = nil
         wallpaperPalette = nil
         activeWallpaperProfileID = nil
+        isUsingWallpaperThemeColor = false
+        isUsingWallpaperCardColor = false
         resetWallpaperAppearance()
         prefs.removeObject(forKey: wallpaperPaletteKey)
         prefs.removeObject(forKey: activeWallpaperProfileIDKey)
+        prefs.removeObject(forKey: wallpaperCardColorHexKey)
+        prefs.removeObject(forKey: wallpaperCardColorEnabledKey)
+        savePreferencesToDisk()
         if let url = wallpaperFileURL() {
             try? FileManager.default.removeItem(at: url)
         }
@@ -547,9 +1366,9 @@ final class AppViewModel {
     }
 
     private func resetWallpaperAppearance() {
-        wallpaperVisibility = 84
-        wallpaperBlurRadius = 6
-        wallpaperPanelOpacity = 64
+        wallpaperVisibility = 100
+        wallpaperBlurRadius = 0
+        wallpaperPanelOpacity = 85
         wallpaperZoomPercent = 0
         wallpaperHorizontalFrame = 50
         wallpaperVerticalFrame = 50
@@ -592,6 +1411,107 @@ final class AppViewModel {
         )
     }
 
+    private func wallpaperThemeHexOptions(for palette: WallpaperPalette) -> [String] {
+        if let prominentHexes = palette.prominentHexes {
+            return fiveUniqueHexes(prominentHexes, fallback: palette.primaryHex)
+        }
+
+        let bridge = blendedHex(palette.primaryHex, palette.accentHex, amount: 0.5)
+        return fiveUniqueHexes([
+            palette.primaryHex,
+            blendedHex(palette.primaryHex, bridge, amount: 0.35),
+            bridge,
+            blendedHex(bridge, palette.accentHex, amount: 0.35),
+            palette.accentHex
+        ], fallback: palette.primaryHex)
+    }
+
+    private func wallpaperCardHexOptions(for palette: WallpaperPalette) -> [String] {
+        if let subtleHexes = palette.subtleHexes {
+            return fiveUniqueHexes(subtleHexes, fallback: palette.backgroundHex)
+        }
+
+        let themeHexes = wallpaperThemeHexOptions(for: palette)
+        let cardHexes = themeHexes.map { blendedHex(palette.backgroundHex, $0, amount: 0.38) }
+        return fiveUniqueHexes(cardHexes, fallback: palette.backgroundHex)
+    }
+
+    private func defaultWallpaperCardColorHex(for palette: WallpaperPalette) -> String {
+        wallpaperCardHexOptions(for: palette).first ?? palette.backgroundHex
+    }
+
+    private func fiveUniqueHexes(_ hexes: [String], fallback: String) -> [String] {
+        var result: [String] = []
+        for hex in hexes.map(normalizedHex) where !result.contains(hex) {
+            result.append(hex)
+        }
+
+        let fallbackHex = normalizedHex(fallback)
+        while result.count < 5 {
+            result.append(fallbackHex)
+        }
+        return Array(result.prefix(5))
+    }
+
+    private func normalizedHex(_ hex: String) -> String {
+        let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).lowercased()
+        guard clean.count >= 6 else { return "0d9488" }
+        return String(clean.suffix(6))
+    }
+
+    private func blendedHex(_ firstHex: String, _ secondHex: String, amount: CGFloat) -> String {
+        let first = rgbComponents(from: firstHex)
+        let second = rgbComponents(from: secondHex)
+        let clamped = min(max(amount, 0), 1)
+        let red = first.red * (1 - clamped) + second.red * clamped
+        let green = first.green * (1 - clamped) + second.green * clamped
+        let blue = first.blue * (1 - clamped) + second.blue * clamped
+        return String(
+            format: "%02x%02x%02x",
+            Int((red * 255).rounded()),
+            Int((green * 255).rounded()),
+            Int((blue * 255).rounded())
+        )
+    }
+
+    private func rgbComponents(from hex: String) -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        let clean = normalizedHex(hex)
+        var value: UInt64 = 0
+        Scanner(string: clean).scanHexInt64(&value)
+        return (
+            red: CGFloat((value >> 16) & 0xff) / 255,
+            green: CGFloat((value >> 8) & 0xff) / 255,
+            blue: CGFloat(value & 0xff) / 255
+        )
+    }
+
+    private func loadGoalQuickAddAmounts() {
+        guard let storedValues = prefs.array(forKey: goalQuickAddAmountsKey) else {
+            goalQuickAddAmounts = defaultGoalQuickAddAmounts
+            return
+        }
+        let values = storedValues.compactMap { value -> Double? in
+            if let double = value as? Double { return double }
+            if let number = value as? NSNumber { return number.doubleValue }
+            return nil
+        }
+        goalQuickAddAmounts = normalizedGoalQuickAddAmounts(values)
+    }
+
+    private func saveGoalQuickAddAmounts() {
+        goalQuickAddAmounts = normalizedGoalQuickAddAmounts(goalQuickAddAmounts)
+        prefs.set(goalQuickAddAmounts, forKey: goalQuickAddAmountsKey)
+    }
+
+    private func normalizedGoalQuickAddAmounts(_ values: [Double]) -> [Double] {
+        defaultGoalQuickAddAmounts.indices.map { index in
+            if values.indices.contains(index), values[index] > 0 {
+                return values[index]
+            }
+            return defaultGoalQuickAddAmounts[index]
+        }
+    }
+
     private func loadWallpaperProfiles() {
         guard let data = prefs.data(forKey: wallpaperProfilesKey),
               let profiles = try? JSONDecoder().decode([WallpaperThemeProfile].self, from: data) else {
@@ -631,6 +1551,15 @@ final class AppViewModel {
         saveWallpaperProfiles()
     }
 
+    private func updateActiveWallpaperProfileColorChoices() {
+        guard let activeWallpaperProfileID,
+              let index = wallpaperProfiles.firstIndex(where: { $0.id == activeWallpaperProfileID }) else { return }
+
+        wallpaperProfiles[index].themeColorHex = isUsingWallpaperThemeColor ? nil : hexString(from: customThemeColor)
+        wallpaperProfiles[index].cardColorHex = isUsingWallpaperCardColor ? hexString(from: wallpaperCardColor) : nil
+        saveWallpaperProfiles()
+    }
+
     private func migrateLegacyWallpaperToProfile(imageData: Data, palette: WallpaperPalette) {
         let profileID = UUID().uuidString
         let profile = WallpaperThemeProfile(
@@ -638,6 +1567,8 @@ final class AppViewModel {
             name: nextWallpaperProfileName(),
             imageFileName: "\(profileID).jpg",
             palette: palette,
+            themeColorHex: nil,
+            cardColorHex: defaultWallpaperCardColorHex(for: palette),
             visibility: clampedPercent(wallpaperVisibility),
             blurRadius: clampedPercent(wallpaperBlurRadius),
             panelOpacity: clampedPercent(wallpaperPanelOpacity),
@@ -679,6 +1610,11 @@ final class AppViewModel {
     }
 
     private func wallpaperProfileFileURL(fileName: String) -> URL? {
+        guard let folder = wallpaperProfilesFolderURL(createIfNeeded: true) else { return nil }
+        return folder.appendingPathComponent(fileName)
+    }
+
+    private func wallpaperProfilesFolderURL(createIfNeeded: Bool) -> URL? {
         guard let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
@@ -686,8 +1622,10 @@ final class AppViewModel {
         let folder = baseURL
             .appendingPathComponent("PennyLet", isDirectory: true)
             .appendingPathComponent(wallpaperProfilesFolderName, isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent(fileName)
+        if createIfNeeded {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        return folder
     }
 
     private func wallpaperFileURL() -> URL? {
@@ -712,6 +1650,15 @@ final class AppViewModel {
         budget.monthlyEssentials = data.monthlyEssentials
         budget.monthlySavingsGoal = data.monthlySavingsGoal
         if let p = data.payDay { budget.payDay = p }
+        if let startDate = data.startDate { budget.startDate = startDate }
+        if let balance = data.currentSpendableBalance { budget.currentSpendableBalance = balance }
+        if let cash = data.cashOnHand { budget.cashOnHand = cash }
+        if let untouched = data.moneyToKeepUntouched { budget.moneyToKeepUntouched = untouched }
+        if let bills = data.billsDueBeforeNextIncome { budget.billsDueBeforeNextIncome = bills }
+        if let savings = data.savingsDueBeforeNextIncome { budget.savingsDueBeforeNextIncome = savings }
+        if let nextDate = data.nextIncomeDate { budget.nextIncomeDate = nextDate }
+        if let nextAmount = data.nextIncomeAmount { budget.nextIncomeAmount = nextAmount }
+        if let cadence = data.incomeCadence { budget.incomeCadence = cadence }
         if let c = data.currency { budget.currency = c; currency = c }
         if let l = data.language { budget.language = l; language = l }
         if let t = data.theme { budget.theme = t; if let th = AppTheme(rawValue: t) { theme = th } }
@@ -727,15 +1674,68 @@ final class AppViewModel {
         if let bp = data.budgetAlertsPushEnabled { budget.budgetAlertsPushEnabled = bp }
         if let ae = data.alertEmail { budget.alertEmail = ae }
         if let cc = data.customCategories { budget.customCategories = cc }
+        budget.updatedDate = ISO8601DateFormatter().string(from: Date())
         budgets[0] = budget
         saveLocalData()
     }
 
+    func updateTodaySnapshot(
+        currentSpendableBalance: Double,
+        cashOnHand: Double,
+        moneyToKeepUntouched: Double,
+        billsDueBeforeNextIncome: Double,
+        savingsDueBeforeNextIncome: Double,
+        nextIncomeDate: Date,
+        nextIncomeAmount: Double?
+    ) {
+        guard let budget = currentBudget else { return }
+        updateBudgetLocally(BudgetData(
+            monthlyIncome: budget.monthlyIncome,
+            monthlyEssentials: budget.monthlyEssentials,
+            monthlySavingsGoal: budget.monthlySavingsGoal,
+            payDay: Calendar.current.component(.day, from: nextIncomeDate),
+            startDate: budget.startDate,
+            currentSpendableBalance: max(0, currentSpendableBalance),
+            cashOnHand: max(0, cashOnHand),
+            moneyToKeepUntouched: max(0, moneyToKeepUntouched),
+            billsDueBeforeNextIncome: max(0, billsDueBeforeNextIncome),
+            savingsDueBeforeNextIncome: max(0, savingsDueBeforeNextIncome),
+            nextIncomeDate: Self.storedDateString(from: nextIncomeDate),
+            nextIncomeAmount: max(0, nextIncomeAmount ?? budget.monthlyIncome),
+            incomeCadence: budget.incomeCadence,
+            currency: budget.currency,
+            language: budget.language,
+            theme: budget.theme,
+            colorMode: budget.colorMode,
+            font: budget.font,
+            startOfWeek: budget.startOfWeek,
+            autoAnalysisEnabled: budget.autoAnalysisEnabled,
+            dailyAnalysisTime: budget.dailyAnalysisTime,
+            weeklyAnalysisTime: budget.weeklyAnalysisTime,
+            monthlyAnalysisTime: budget.monthlyAnalysisTime,
+            budgetAlertsEnabled: budget.budgetAlertsEnabled,
+            budgetAlertsEmailEnabled: budget.budgetAlertsEmailEnabled,
+            budgetAlertsPushEnabled: budget.budgetAlertsPushEnabled,
+            alertEmail: budget.alertEmail,
+            customCategories: budget.customCategories
+        ))
+    }
+
     func addCustomCategory(_ name: String) {
         guard let budget = currentBudget else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let customID = AppCategory.customCategoryID(for: trimmed)
+        let builtInCategories = AppCategory.expenseCategories + AppCategory.incomeCategories
+        guard !builtInCategories.contains(where: {
+            $0.id == customID || $0.label.localizedCaseInsensitiveCompare(trimmed) == .orderedSame
+        }) else { return }
         var customs = budget.customCategories ?? []
-        guard !customs.contains(name) else { return }
-        customs.append(name)
+        guard !customs.contains(where: {
+            $0.localizedCaseInsensitiveCompare(trimmed) == .orderedSame ||
+                AppCategory.customCategoryID(for: $0) == customID
+        }) else { return }
+        customs.append(trimmed)
         let data = BudgetData(
             monthlyIncome: budget.monthlyIncome,
             monthlyEssentials: budget.monthlyEssentials,
@@ -747,12 +1747,13 @@ final class AppViewModel {
     }
 
     private func aiPersonalContext() -> String {
-        let summary = spendSummary
+        let summary = dashboardSpendSummary
         let budget = currentBudget
         let monthlyIncome = budget?.monthlyIncome ?? 0
         let essentials = budget?.monthlyEssentials ?? 0
         let savingsGoal = budget?.monthlySavingsGoal ?? 0
         let disposable = monthlyIncome - essentials - savingsGoal
+        let startSummary = startFromTodaySummary
 
         let cal = Calendar.current
         let today = Date()
@@ -760,9 +1761,9 @@ final class AppViewModel {
             guard let date = tx.dateValue else { return false }
             return cal.isDate(date, equalTo: today, toGranularity: .month)
         }
-        let monthExpenses = monthTxns.filter { $0.type == .expense }
-        let monthIncome = monthTxns.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
-        let monthSpent = monthExpenses.reduce(0) { $0 + $1.amount }
+        let monthExpenses = aiExpenseTransactions(monthTxns)
+        let monthIncome = aiIncomeAmount(in: monthTxns)
+        let monthSpent = aiSpendAmount(in: monthTxns)
         let budgetPercent = disposable > 0 ? Int((monthSpent / disposable * 100).rounded()) : 0
         let projectedSpend = projectedMonthSpend(currentSpent: monthSpent, summary: summary)
 
@@ -785,6 +1786,11 @@ final class AppViewModel {
             "- Savings goal: \(CurrencyFormat.format(savingsGoal, currency: currency))",
             "- Disposable budget: \(CurrencyFormat.format(disposable, currency: currency))",
             "- Pay day: \(budget?.payDay.map(String.init) ?? "not set")",
+            "- Start-from-today mode: \(startSummary == nil ? "off" : "on")",
+            "- Money available today: \(CurrencyFormat.format(startSummary?.currentMoney ?? 0, currency: currency))",
+            "- Safe until payday: \(CurrencyFormat.format(startSummary?.trueSafeToSpend ?? 0, currency: currency))",
+            "- Daily until payday: \(CurrencyFormat.format(startSummary?.dailySafeToSpend ?? 0, currency: currency))",
+            "- Next income amount: \(CurrencyFormat.format(startSummary?.nextIncomeAmount ?? 0, currency: currency))",
             "- Current month spent: \(CurrencyFormat.format(monthSpent, currency: currency)) (\(budgetPercent)% of disposable budget)",
             "- Current month income recorded: \(CurrencyFormat.format(monthIncome, currency: currency))",
             "- Projected month-end spend at current pace: \(CurrencyFormat.format(projectedSpend, currency: currency))",
@@ -797,7 +1803,7 @@ final class AppViewModel {
             "- Current month top categories: \(topCategoryLines(from: monthExpenses, limit: 4))",
             "- Current month top merchants: \(topMerchantLines(from: monthExpenses, limit: 4))",
             "- Largest current month expenses: \(transactionEvidenceLines(monthExpenses.sorted { $0.amount > $1.amount }, limit: 3))",
-            "- Recent transactions: \(transactionEvidenceLines(transactions.sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) }, limit: 6))",
+            "- Recent transactions: \(transactionEvidenceLines(aiEvidenceTransactions(transactions).sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) }, limit: 6))",
             "- Goals: \(goalContextLines())"
         ].joined(separator: "\n")
     }
@@ -809,6 +1815,8 @@ final class AppViewModel {
         - Treat the provided PennyLet data as the only source of truth.
         - Do not invent missing transactions, income, merchants, dates, goals, or category changes.
         - Cite exact amounts, categories, merchants, dates, percentages, or time windows when making claims.
+        - If history is short or the user started mid-month, say the answer is based on saved PennyLet data instead of implying a complete bank history.
+        - Never suggest connecting a bank, uploading credentials, or using financial data that is not already saved in PennyLet.
         - Keep the output short, specific, and useful in under 15 seconds.
         - The action must be measurable: include a target amount, category, merchant, or time window.
         - Use a calm, non-judgmental tone.
@@ -816,7 +1824,7 @@ final class AppViewModel {
     }
 
     private func topCategoryLines(from txns: [Transaction], limit: Int) -> String {
-        let grouped = Dictionary(grouping: txns, by: { $0.category ?? "other" })
+        let grouped = Dictionary(grouping: aiExpenseTransactions(txns), by: { normalizedCategoryID(for: $0) ?? "other" })
             .mapValues { $0.reduce(0) { $0 + $1.amount } }
             .sorted { $0.value > $1.value }
             .prefix(limit)
@@ -826,7 +1834,7 @@ final class AppViewModel {
     }
 
     private func topMerchantLines(from txns: [Transaction], limit: Int) -> String {
-        let named = txns.compactMap { tx -> (String, Double)? in
+        let named = aiExpenseTransactions(txns).compactMap { tx -> (String, Double)? in
             guard let merchant = tx.merchant?.trimmingCharacters(in: .whitespacesAndNewlines), !merchant.isEmpty else { return nil }
             return (merchant, tx.amount)
         }
@@ -840,7 +1848,7 @@ final class AppViewModel {
     }
 
     private func transactionEvidenceLines(_ txns: [Transaction], limit: Int) -> String {
-        let items = txns.prefix(limit).map { tx in
+        let items = aiEvidenceTransactions(txns).prefix(limit).map { tx in
             let dateText = tx.dateValue.map(shortDate) ?? tx.date
             let sign = tx.type == .income ? "+" : "-"
             let merchant = tx.merchant?.isEmpty == false ? " at \(tx.merchant!)" : ""
@@ -880,7 +1888,7 @@ final class AppViewModel {
     }
 
     private func categoryTotals(_ txns: [Transaction]) -> [String: Double] {
-        Dictionary(grouping: txns.filter { $0.type == .expense }, by: { $0.category ?? "other" })
+        Dictionary(grouping: aiExpenseTransactions(txns), by: { normalizedCategoryID(for: $0) ?? "other" })
             .mapValues { $0.reduce(0) { $0 + $1.amount } }
     }
 
@@ -901,8 +1909,60 @@ final class AppViewModel {
             return "0 transactions"
         }
         let expenseCount = txns.filter { $0.type == .expense }.count
-        let incomeCount = txns.filter { $0.type == .income }.count
-        return "\(txns.count) transactions (\(expenseCount) expenses, \(incomeCount) income) from \(shortDate(first)) to \(shortDate(last))"
+        let incomeCount = txns.filter { $0.type == .income && !isRefundOrReimbursement($0) }.count
+        let excludedCount = txns.filter(isTransferOrExcluded).count
+        return "\(txns.count) transactions (\(expenseCount) expenses, \(incomeCount) income, \(excludedCount) transfers/excluded) from \(shortDate(first)) to \(shortDate(last))"
+    }
+
+    private func aiExpenseTransactions(_ txns: [Transaction]) -> [Transaction] {
+        txns.filter { $0.type == .expense && !isTransferOrExcluded($0) }
+    }
+
+    private func aiEvidenceTransactions(_ txns: [Transaction]) -> [Transaction] {
+        txns.filter { !isTransferOrExcluded($0) || isRefundOrReimbursement($0) }
+    }
+
+    private func aiSpendAmount(in txns: [Transaction]) -> Double {
+        let expenses = aiExpenseTransactions(txns).reduce(0) { $0 + $1.amount }
+        let refunds = txns.filter(isRefundOrReimbursement).reduce(0) { $0 + $1.amount }
+        return max(expenses - refunds, 0)
+    }
+
+    private func aiIncomeAmount(in txns: [Transaction]) -> Double {
+        txns
+            .filter { $0.type == .income && !isTransferOrExcluded($0) && !isRefundOrReimbursement($0) }
+            .reduce(0) { $0 + $1.amount }
+    }
+
+    private func isRefundOrReimbursement(_ tx: Transaction) -> Bool {
+        let category = normalizedCategoryID(for: tx) ?? ""
+        let tags = tx.tags ?? []
+        return category == "refund" ||
+            category == "reimbursement" ||
+            tags.contains(where: { $0.contains("refund") || $0.contains("reimbursement") || $0.contains("reimburse") })
+    }
+
+    private func isTransferOrExcluded(_ tx: Transaction) -> Bool {
+        let category = normalizedCategoryID(for: tx) ?? ""
+        let tags = tx.tags ?? []
+        if isRefundOrReimbursement(tx) {
+            return false
+        }
+        return category == "transfer" ||
+            category == "credit_card_payment" ||
+            category == "balance_adjustment" ||
+            category == "ignore" ||
+            tags.contains(where: { tag in
+                tag.contains("transfer") ||
+                    tag.contains("credit_card_payment") ||
+                    tag.contains("payment_out") ||
+                    tag.contains("payment_in") ||
+                    tag.contains("adjustment")
+            })
+    }
+
+    private func normalizedCategoryID(for tx: Transaction) -> String? {
+        AppCategory.normalizedCategoryID(for: tx.category, type: tx.type)
     }
 
     private func originalCurrencyText(for tx: Transaction) -> String {
@@ -943,14 +2003,14 @@ final class AppViewModel {
 
     func generateForecast(progress: AIProgressHandler? = nil) async throws -> AIResult {
         progress?(.collectingData)
-        let s = spendSummary
+        let s = dashboardSpendSummary
         let cal = Calendar.current
         let thisMonth = transactions.filter { tx in
             guard let date = tx.dateValue else { return false }
             return cal.isDate(date, equalTo: Date(), toGranularity: .month)
         }
-        let thisMonthSpent = thisMonth.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-        let thisMonthIncome = thisMonth.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        let thisMonthSpent = aiSpendAmount(in: thisMonth)
+        let thisMonthIncome = aiIncomeAmount(in: thisMonth)
 
         // Previous months for comparison (up to 3 months back)
         var pastMonthsData: [(label: String, spent: Double)] = []
@@ -958,15 +2018,15 @@ final class AppViewModel {
             guard let monthStart = cal.date(byAdding: .month, value: -offset, to: Date()) else { continue }
             let monthTxns = transactions.filter { tx in
                 guard let date = tx.dateValue else { return false }
-                return cal.isDate(date, equalTo: monthStart, toGranularity: .month) && tx.type == .expense
+                return cal.isDate(date, equalTo: monthStart, toGranularity: .month)
             }
-            let total = monthTxns.reduce(0) { $0 + $1.amount }
+            let total = aiSpendAmount(in: monthTxns)
             let df = DateFormatter(); df.dateFormat = "MMM"
             pastMonthsData.append((df.string(from: monthStart), total))
         }
 
-        let thisMonthExpenses = thisMonth.filter { $0.type == .expense }
-        let byCategory: [String: Double] = Dictionary(grouping: thisMonthExpenses, by: { $0.category ?? "other" })
+        let thisMonthExpenses = aiExpenseTransactions(thisMonth)
+        let byCategory: [String: Double] = Dictionary(grouping: thisMonthExpenses, by: { normalizedCategoryID(for: $0) ?? "other" })
             .mapValues { txns in txns.reduce(0) { $0 + $1.amount } }
         let catLines = topCategoryLines(from: thisMonthExpenses, limit: 5)
         let projectedThisMonth = projectedMonthSpend(currentSpent: thisMonthSpent, summary: s)
@@ -980,7 +2040,7 @@ final class AppViewModel {
             return df.string(from: Date())
         }()
         let recentEvidence = transactionEvidenceLines(
-            transactions.sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) },
+            aiEvidenceTransactions(transactions).sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) },
             limit: 6
         )
 
@@ -1028,7 +2088,12 @@ final class AppViewModel {
         ]
         progress?(.requestPrepared)
         progress?(.waitingForAI)
-        let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        let raw: String
+        do {
+            raw = try await invokeLLMWithUserFacingDeadline(prompt: prompt, responseJSONSchema: schema)
+        } catch {
+            return await localAIFallback(type: "forecast", feature: "forecast", progress: progress, error: error)
+        }
         progress?(.responseReceived)
         let formatted = formatForecastResult(raw)
         let forecastAmount = jsonNumber(raw, key: "forecast_amount") ?? localForecastBaseline
@@ -1081,19 +2146,31 @@ final class AppViewModel {
         let dailyChart: [(day: String, amount: Double)]
     }
 
-    enum AIProgressPhase: Sendable {
+    enum AIProgressPhase: Sendable, Equatable {
         case collectingData
         case requestPrepared
         case waitingForAI
+        case usingLocalSummary
         case responseReceived
         case savingResult
         case finished
+
+        static let orderedPhases: [AIProgressPhase] = [
+            .collectingData,
+            .requestPrepared,
+            .waitingForAI,
+            .usingLocalSummary,
+            .responseReceived,
+            .savingResult,
+            .finished
+        ]
 
         var messageKey: String {
             switch self {
             case .collectingData: return "Reading local spending data"
             case .requestPrepared: return "Preparing AI request"
             case .waitingForAI: return "Waiting for AI response"
+            case .usingLocalSummary: return "Building local analysis"
             case .responseReceived: return "AI response received"
             case .savingResult: return "Saving result locally"
             case .finished: return "Result ready"
@@ -1103,17 +2180,42 @@ final class AppViewModel {
 
     typealias AIProgressHandler = @MainActor @Sendable (AIProgressPhase) -> Void
 
+    private func invokeLLMWithUserFacingDeadline(
+        prompt: String,
+        responseJSONSchema: [String: AnyCodable]? = nil
+    ) async throws -> String {
+        let client = aiClient
+        let tier = aiModelTier
+        let timeout = aiUserFacingTimeoutNanoseconds
+
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                try await client.invokeLLM(prompt: prompt, responseJSONSchema: responseJSONSchema, modelTier: tier)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeout)
+                throw ClientError.requestTimedOut
+            }
+
+            guard let result = try await group.next() else {
+                throw ClientError.requestTimedOut
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
     func generateDailyAnalysis(progress: AIProgressHandler? = nil) async throws -> AIResult {
         progress?(.collectingData)
-        let summary = spendSummary
+        let summary = dashboardSpendSummary
         let todayTxns = transactions.filter { tx in
             guard let date = tx.dateValue else { return false }
             return Calendar.current.isDateInToday(date)
         }
-        let todaySpent = todayTxns.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-        let todayIncome = todayTxns.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        let todaySpent = aiSpendAmount(in: todayTxns)
+        let todayIncome = aiIncomeAmount(in: todayTxns)
         let txnLines = transactionEvidenceLines(
-            todayTxns.sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) },
+            aiEvidenceTransactions(todayTxns).sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) },
             limit: 10
         )
         let recentTxns = transactions.filter { tx in
@@ -1121,7 +2223,7 @@ final class AppViewModel {
             let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 999
             return days >= 0 && days <= 14
         }.sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) }
-        let recentExpenses = recentTxns.filter { $0.type == .expense }
+        let recentExpenses = aiExpenseTransactions(recentTxns)
 
         let prompt = """
         You are a precise personal finance assistant. Use ONLY the data below. NEVER invent numbers.
@@ -1182,7 +2284,12 @@ final class AppViewModel {
 
         progress?(.requestPrepared)
         progress?(.waitingForAI)
-        let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        let raw: String
+        do {
+            raw = try await invokeLLMWithUserFacingDeadline(prompt: prompt, responseJSONSchema: schema)
+        } catch {
+            return await localAIFallback(type: "daily", feature: "daily", progress: progress, error: error)
+        }
         progress?(.responseReceived)
         let formatted = formatResult(raw, type: "daily")
 
@@ -1200,7 +2307,7 @@ final class AppViewModel {
 
     func generateWeeklyAnalysis(progress: AIProgressHandler? = nil) async throws -> AIResult {
         progress?(.collectingData)
-        let summary = spendSummary
+        let summary = dashboardSpendSummary
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let currentWindowStart = cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
@@ -1214,11 +2321,11 @@ final class AppViewModel {
             return date >= previousWindowStart && date < currentWindowStart
         }
 
-        let thisWeekSpent = thisWeekTxns.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-        let lastWeekSpent = lastWeekTxns.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        let thisWeekSpent = aiSpendAmount(in: thisWeekTxns)
+        let lastWeekSpent = aiSpendAmount(in: lastWeekTxns)
 
-        let thisWeekExpenses = thisWeekTxns.filter { $0.type == .expense }
-        let lastWeekExpenses = lastWeekTxns.filter { $0.type == .expense }
+        let thisWeekExpenses = aiExpenseTransactions(thisWeekTxns)
+        let lastWeekExpenses = aiExpenseTransactions(lastWeekTxns)
         let catLines = topCategoryLines(from: thisWeekExpenses, limit: 5)
         let lastCatLines = topCategoryLines(from: lastWeekExpenses, limit: 5)
         let categoryChanges = categoryComparisonLines(current: thisWeekExpenses, previous: lastWeekExpenses, limit: 4)
@@ -1290,7 +2397,12 @@ final class AppViewModel {
 
         progress?(.requestPrepared)
         progress?(.waitingForAI)
-        let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        let raw: String
+        do {
+            raw = try await invokeLLMWithUserFacingDeadline(prompt: prompt, responseJSONSchema: schema)
+        } catch {
+            return await localAIFallback(type: "weekly", feature: "recap", progress: progress, error: error)
+        }
         progress?(.responseReceived)
         let formatted = formatResult(raw, type: "weekly")
 
@@ -1310,7 +2422,7 @@ final class AppViewModel {
     func generateMonthlyAnalysis(progress: AIProgressHandler? = nil) async throws -> AIResult {
         progress?(.collectingData)
         let budget = currentBudget
-        let s = spendSummary
+        let s = dashboardSpendSummary
         let cal = Calendar.current
         let analysisDate = Date()
         let monthTxns = transactions.filter { tx in
@@ -1323,12 +2435,12 @@ final class AppViewModel {
             return cal.isDate(date, equalTo: lastMonth, toGranularity: .month)
         }
 
-        let monthSpent = monthTxns.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-        let monthIncome = monthTxns.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
-        let lastMonthSpent = lastMonthTxns.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        let monthSpent = aiSpendAmount(in: monthTxns)
+        let monthIncome = aiIncomeAmount(in: monthTxns)
+        let lastMonthSpent = aiSpendAmount(in: lastMonthTxns)
 
-        let monthExpenses = monthTxns.filter { $0.type == .expense }
-        let lastMonthExpenses = lastMonthTxns.filter { $0.type == .expense }
+        let monthExpenses = aiExpenseTransactions(monthTxns)
+        let lastMonthExpenses = aiExpenseTransactions(lastMonthTxns)
         let catLines = topCategoryLines(from: monthExpenses, limit: 5)
         let lastCatLines = topCategoryLines(from: lastMonthExpenses, limit: 5)
         let categoryChanges = categoryComparisonLines(current: monthExpenses, previous: lastMonthExpenses, limit: 5)
@@ -1403,7 +2515,12 @@ final class AppViewModel {
 
         progress?(.requestPrepared)
         progress?(.waitingForAI)
-        let raw = try await aiClient.invokeLLM(prompt: prompt, responseJSONSchema: schema, modelTier: aiModelTier)
+        let raw: String
+        do {
+            raw = try await invokeLLMWithUserFacingDeadline(prompt: prompt, responseJSONSchema: schema)
+        } catch {
+            return await localAIFallback(type: "monthly", feature: "insight", progress: progress, error: error)
+        }
         progress?(.responseReceived)
         let formatted = formatResult(raw, type: "monthly")
 
@@ -1473,6 +2590,174 @@ final class AppViewModel {
         return trimmed
     }
 
+    private func localAIFallback(
+        type: String,
+        feature: String,
+        progress: AIProgressHandler?,
+        error: Error
+    ) async -> AIResult {
+        progress?(.usingLocalSummary)
+        let result = localFallbackResult(type: type, error: error)
+        let now = ISO8601DateFormatter().string(from: Date())
+        progress?(.savingResult)
+        await saveAnalysisHistoryEntry(AnalysisHistoryData(
+            type: type,
+            content: result.text,
+            analysisDate: now,
+            categoryChartJSON: chartJSON(result.categoryChart),
+            dailyChartJSON: chartJSON(result.dailyChart)
+        ))
+
+        switch type {
+        case "daily":
+            currentDailyResult = result
+        case "weekly":
+            currentWeeklyResult = result
+        case "monthly":
+            currentMonthlyResult = result
+        case "forecast":
+            currentForecastResult = result
+        default:
+            break
+        }
+
+        progress?(.finished)
+        return result
+    }
+
+    private func localFallbackResult(type: String, error: Error) -> AIResult {
+        let summary = dashboardSpendSummary
+        let dashboard = localMoneyLogicV2Dashboard
+        let categoryChart = computeCategoryBreakdown()
+        let weeklyTrend = computeWeeklyTrend()
+        let topCategory = categoryChart.first
+        let fallbackReason = fallbackReasonText(for: error)
+        let safe = CurrencyFormat.format(dashboard.safeToSpend.trueSafeToSpend, currency: currency)
+        let daily = CurrencyFormat.format(dashboard.safeToSpend.dailySafeToSpend, currency: currency)
+        let spent = CurrencyFormat.format(summary.spent, currency: currency)
+        let remaining = CurrencyFormat.format(summary.remaining, currency: currency)
+        let reviewCount = reviewQueue.count
+        let noneText: String
+        let noCommitmentsText: String
+        let localEvidenceText: String
+        let fallbackIntro: String
+        let safeLine: String
+        let spentLine: String
+        let reviewLine: String
+        let nextStepLine: String
+        let confidenceLevelText: String
+        let estimatedText: String
+        let title: String
+        switch language {
+        case "ja":
+            noneText = "なし"
+            noCommitmentsText = "今後の定期支払いはまだ見つかっていません。"
+            localEvidenceText = "この結果は、この端末に保存された取引、予算、目標、振替、返金、定期項目だけをもとにしています。"
+            fallbackIntro = "リモートAIを利用できなかったため、PennyLetが端末内の計算で代わりに作成しました。\(fallbackReason)"
+            safeLine = "使ってよい金額: \(safe)。1日あたり: \(daily)。"
+            spentLine = "今月の記録済み支出: \(spent)。計画上の残り: \(remaining)。"
+            reviewLine = reviewCount == 0 ? "なし" : "\(reviewCount)件の確認が必要です。"
+            nextStepLine = "未分類の項目を確認し、自由支出を1日あたり\(daily)前後に保ちましょう。"
+            confidenceLevelText = "中"
+            estimatedText = "予測"
+            switch type {
+            case "daily": title = "端末内の今日の分析"
+            case "weekly": title = "端末内の週間分析"
+            case "monthly": title = "端末内の月間分析"
+            case "forecast": title = "端末内の予測"
+            default: title = "端末内の支出分析"
+            }
+        case "zh":
+            noneText = "无"
+            noCommitmentsText = "暂未发现即将到来的定期支出。"
+            localEvidenceText = "此结果只基于本机已保存的交易、预算、目标、转账、退款和定期项目。"
+            fallbackIntro = "远程 AI 暂时不可用，所以 PennyLet 改用本机计算生成结果。\(fallbackReason)"
+            safeLine = "可安心花费: \(safe)。每日可用: \(daily)。"
+            spentLine = "本月已记录支出: \(spent)。计划剩余空间: \(remaining)。"
+            reviewLine = reviewCount == 0 ? "无" : "还有 \(reviewCount) 项需要确认。"
+            nextStepLine = "先确认未分类项目，再把自由支出控制在每天约 \(daily)。"
+            confidenceLevelText = "中等"
+            estimatedText = "估算"
+            switch type {
+            case "daily": title = "本机每日分析"
+            case "weekly": title = "本机每周分析"
+            case "monthly": title = "本机月度分析"
+            case "forecast": title = "本机预测分析"
+            default: title = "本机支出分析"
+            }
+        default:
+            noneText = "none"
+            noCommitmentsText = "No upcoming recurring commitments found yet."
+            localEvidenceText = "This is based only on local transactions, budgets, goals, transfers, refunds, and recurring items already saved on this device."
+            fallbackIntro = "Remote AI was unavailable, so PennyLet used a local calculation instead. \(fallbackReason)"
+            safeLine = "Safe to spend: \(safe). Daily safe amount: \(daily)."
+            spentLine = "This month recorded spending: \(spent). Remaining plan room: \(remaining)."
+            reviewLine = reviewCount == 0 ? "none" : "\(reviewCount) item\(reviewCount == 1 ? "" : "s") still need review."
+            nextStepLine = "Review any uncategorized items, then keep discretionary spending near \(daily) per day."
+            confidenceLevelText = "Medium"
+            estimatedText = "est"
+            switch type {
+            case "daily": title = "Local daily read"
+            case "weekly": title = "Local weekly read"
+            case "monthly": title = "Local monthly read"
+            case "forecast": title = "Local forecast read"
+            default: title = "Local spending read"
+            }
+        }
+
+        let topLine = topCategory.map { "\($0.0): \(CurrencyFormat.format($0.1, currency: currency))" } ?? noneText
+        let commitments = dashboard.upcomingCommitments.prefix(3)
+            .map { "\($0.name) \(CurrencyFormat.format($0.amount, currency: currency))" }
+            .joined(separator: "; ")
+
+        let forecastLine: String = {
+            guard type == "forecast" else { return "" }
+            let forecast = weeklyTrend.map { $0.1 }.filter { $0 > 0 }
+            let average = forecast.isEmpty ? summary.spent : forecast.reduce(0, +) / Double(max(forecast.count, 1))
+            return "\n\n\(l.totalSpent) (\(estimatedText)): \(CurrencyFormat.format(max(average * 4.3, summary.spent), currency: currency))"
+        }()
+
+        let text = [
+            title,
+            fallbackIntro,
+            safeLine,
+            spentLine,
+            "\(l.topCategory): \(topLine).",
+            "\(l.watchItem): \(commitments.isEmpty ? noCommitmentsText : commitments).",
+            "\(l.confidence): \(confidenceLevelText). \(localEvidenceText)",
+            "\(l.dataQuality): \(reviewLine)",
+            "\(l.nextStep): \(nextStepLine)"
+        ].joined(separator: "\n\n") + forecastLine
+
+        return AIResult(text: text, categoryChart: categoryChart, dailyChart: weeklyTrend)
+    }
+
+    private func fallbackReasonText(for error: Error) -> String {
+        if let clientError = error as? ClientError {
+            switch clientError {
+            case .requestTimedOut:
+                switch language {
+                case "ja": return "リクエストがタイムアウトしました。"
+                case "zh": return "请求已超时。"
+                default: return "The request timed out."
+                }
+            case .serverError, .unauthorized, .notFound:
+                switch language {
+                case "ja": return "AIサービスに接続できませんでした。"
+                case "zh": return "无法连接到 AI 服务。"
+                default: return "The AI service could not be reached."
+                }
+            default:
+                switch language {
+                case "ja": return "AIリクエストを完了できませんでした。"
+                case "zh": return "AI 请求未能完成。"
+                default: return "The AI request could not be completed."
+                }
+            }
+        }
+        return error.localizedDescription
+    }
+
     private func parseChartData(from raw: String) -> ([(String, Double)], [(String, Double)]) {
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -1530,9 +2815,9 @@ final class AppViewModel {
                       let weekEnd = cal.date(byAdding: .day, value: -(weekOffset * 7), to: refDate) else { continue }
                 let weekTxns = transactions.filter { tx in
                     guard let date = tx.dateValue else { return false }
-                    return date >= weekStart && date < weekEnd && tx.type == .expense
+                    return date >= weekStart && date < weekEnd
                 }
-                let total = weekTxns.reduce(0) { $0 + $1.amount }
+                let total = aiSpendAmount(in: weekTxns)
                 let df = DateFormatter(); df.dateFormat = "M/d"
                 trend.append((df.string(from: weekStart), total))
             }
@@ -1541,9 +2826,9 @@ final class AppViewModel {
         case "monthly":
             let monthTxns = transactions.filter { tx in
                 guard let date = tx.dateValue else { return false }
-                return cal.isDate(date, equalTo: refDate, toGranularity: .month) && tx.type == .expense
+                return cal.isDate(date, equalTo: refDate, toGranularity: .month)
             }
-            let grouped = Dictionary(grouping: monthTxns, by: { $0.category ?? "other" })
+            let grouped = Dictionary(grouping: aiExpenseTransactions(monthTxns), by: { normalizedCategoryID(for: $0) ?? "other" })
             let cats = grouped.map { ($0.key, $0.value.reduce(0) { $0 + $1.amount }) }
                 .sorted { $0.1 > $1.1 }
                 .map { (name: $0.0, amount: $0.1) }
@@ -1553,9 +2838,9 @@ final class AppViewModel {
             // Category breakdown for current month
             let monthTxns = transactions.filter { tx in
                 guard let date = tx.dateValue else { return false }
-                return cal.isDate(date, equalTo: refDate, toGranularity: .month) && tx.type == .expense
+                return cal.isDate(date, equalTo: refDate, toGranularity: .month)
             }
-            let grouped = Dictionary(grouping: monthTxns, by: { $0.category ?? "other" })
+            let grouped = Dictionary(grouping: aiExpenseTransactions(monthTxns), by: { normalizedCategoryID(for: $0) ?? "other" })
             let cats = grouped.map { ($0.key, $0.value.reduce(0) { $0 + $1.amount }) }
                 .sorted { $0.1 > $1.1 }
                 .map { (name: $0.0, amount: $0.1) }
@@ -1566,9 +2851,9 @@ final class AppViewModel {
                 guard let monthStart = cal.date(byAdding: .month, value: -offset, to: refDate) else { continue }
                 let txns = transactions.filter { tx in
                     guard let date = tx.dateValue else { return false }
-                    return cal.isDate(date, equalTo: monthStart, toGranularity: .month) && tx.type == .expense
+                    return cal.isDate(date, equalTo: monthStart, toGranularity: .month)
                 }
-                let total = txns.reduce(0) { $0 + $1.amount }
+                let total = aiSpendAmount(in: txns)
                 let df = DateFormatter(); df.dateFormat = "MMM"
                 trend.append((df.string(from: monthStart), total))
             }
@@ -1587,9 +2872,9 @@ final class AppViewModel {
                   let weekEnd = cal.date(byAdding: .day, value: -(weekOffset * 7), to: Date()) else { continue }
             let weekTxns = transactions.filter { tx in
                 guard let date = tx.dateValue else { return false }
-                return date >= weekStart && date < weekEnd && tx.type == .expense
+                return date >= weekStart && date < weekEnd
             }
-            let total = weekTxns.reduce(0) { $0 + $1.amount }
+            let total = aiSpendAmount(in: weekTxns)
             let label: String = {
                 let df = DateFormatter(); df.dateFormat = "M/d"
                 return "\(df.string(from: weekStart))"
@@ -1603,8 +2888,8 @@ final class AppViewModel {
         let monthTxns = transactions.filter { tx in
             guard let date = tx.dateValue else { return false }
             return Calendar.current.isDate(date, equalTo: Date(), toGranularity: .month)
-        }.filter { $0.type == .expense }
-        let grouped = Dictionary(grouping: monthTxns, by: { $0.category ?? "other" })
+        }
+        let grouped = Dictionary(grouping: aiExpenseTransactions(monthTxns), by: { normalizedCategoryID(for: $0) ?? "other" })
         return grouped.map { ($0.key, $0.value.reduce(0) { $0 + $1.amount }) }
             .sorted { $0.1 > $1.1 }
             .map { (name: $0.0, amount: $0.1) }
@@ -1805,7 +3090,7 @@ final class AppViewModel {
         switch language { case "ja": return "月間分析"; case "zh": return "月度洞察"; default: return "Monthly Insight" }
     }
     var monthlyInsightSubtitle: String {
-        switch language { case "ja": return "月間の財務状況の詳細分析"; case "zh": return "月度财务健康状况的深度分析"; default: return "Deep analysis of your monthly financial health" }
+        switch language { case "ja": return "今月のお金を確認"; case "zh": return "查看本月资金状态"; default: return "Check this month's money" }
     }
     var upgradeTitle: String {
         switch language { case "ja": return "アップグレード"; case "zh": return "升级"; default: return "Upgrade" }
@@ -1818,9 +3103,9 @@ final class AppViewModel {
     }
     var upgradeDescription: String {
         switch language {
-        case "ja": return "PennyLet Proでカスタムカテゴリ、支出予測、ビジュアルチャート、より深いAIインサイトを利用できます。"
-        case "zh": return "升级到 PennyLet Pro，解锁自定义类别、支出预测、可视化图表和更深入的 AI 洞察。"
-        default: return "Upgrade to PennyLet Pro to unlock custom categories, spending forecasts, visual charts, and deeper AI insights."
+        case "ja": return "Proで予測、チャート、カテゴリ、AI分析を増やせます。"
+        case "zh": return "Pro 可解锁预测、图表、分类和更多 AI 分析。"
+        default: return "Unlock forecasts, charts, categories, and more AI."
         }
     }
     var subscribeLabel: String {
@@ -1894,13 +3179,13 @@ final class AppViewModel {
         switch language { case "ja": return "利用制限に達しました"; case "zh": return "使用次数已用完"; default: return "Usage Limit Reached" }
     }
     var usageExhaustedFreeMessage: String {
-        switch language { case "ja": return "今月の無料利用回数を使い切りました。PennyLet Proにアップグレードして、より多くの分析と機能をお楽しみください。"; case "zh": return "您本月的免费使用次数已用完。升级到PennyLet Pro以获取更多分析和功能。"; default: return "You've used all your free attempts this month. Upgrade to PennyLet Pro for more analyses and features." }
+        switch language { case "ja": return "今月の無料分を使い切りました。Proで分析を増やせます。"; case "zh": return "本月免费次数已用完。Pro 可解锁更多分析。"; default: return "Free uses are done for this month. Pro adds more analyses." }
     }
     var usageExhaustedProTitle: String {
         switch language { case "ja": return "月間制限に達しました"; case "zh": return "月度使用次数已用完"; default: return "Monthly Limit Reached" }
     }
     var usageExhaustedProMessage: String {
-        switch language { case "ja": return "今月のご利用回数を使い切りました。次の月次リセットまでお待ちください。"; case "zh": return "您本月的使用次数已用完。请等待下月重置。"; default: return "You've used all your monthly attempts. Please wait for the next monthly reset." }
+        switch language { case "ja": return "今月分を使い切りました。来月リセットされます。"; case "zh": return "本月次数已用完，下月会刷新。"; default: return "Monthly uses are done. They refresh next month." }
     }
     var okLabel: String {
         switch language { case "ja": return "OK"; case "zh": return "确定"; default: return "OK" }
@@ -1966,7 +3251,6 @@ final class AppViewModel {
         "Create Account or Sign In": "アカウント作成 / サインイン",
         "Account Required": "アカウントが必要です",
         "Upgrading to Pro requires an account. Create one or sign in to continue.": "Proへのアップグレードにはアカウントが必要です。アカウントを作成するかサインインしてください。",
-        "To upgrade to PennyLet Pro, you need an account. Your data will be saved and synced across devices.": "PennyLet Proにアップグレードするにはアカウントが必要です。データは保存され、デバイス間で同期されます。",
         "Log In": "ログイン",
 
         // Onboarding
@@ -1974,11 +3258,11 @@ final class AppViewModel {
         "How PennyLet Works": "PennyLetの使い方",
         "Help": "ヘルプ",
         "Done": "完了",
-        "help_balance": "今月の収入から支出を引いた金額です。プラスなら黒字、マイナスなら赤字です。",
-        "help_safe_daily": "（月収 − 固定費 − 貯金目標 − 既に使った金額）÷ 残り日数 で計算されます。この金額を超えて使うと月末までに予算が足りなくなります。",
-        "help_categories": "今月の支出をカテゴリ別に分類します。どのカテゴリにお金を使いすぎているかが一目でわかります。",
-        "help_ai": "AIがあなたの支出パターンを分析し、日次・週次・月次のインサイトを提供します。無料枠でお試しいただけます。",
-        "help_subscriptions": "このデバイスのApp Storeサブスクリプションを自動検出し、月額・年額の合計を表示します。",
+        "help_balance": "今月入ったお金から出ていったお金を引いた金額です。今月が順調かどうかをすばやく確認できます。",
+        "help_safe_daily": "使う前に見るための金額です。PennyLetは請求、貯金目標、予定している支出を先に取り分けます。",
+        "help_categories": "今月どこにお金を使ったかを表示します。注意したいカテゴリを見つけやすくなります。",
+        "help_ai": "保存済みの支出データから、日次・週次・月次・予測の短いメモを作ります。オンラインAIが遅いときは、端末内の集計で代わりに表示します。",
+        "help_subscriptions": "サブスクを1か所で管理できます。手動追加、対象のApp Store購入の確認、取引から見つけた候補の確認ができます。",
         "Welcome to PennyLet": "PennyLetへようこそ",
         "Track your spending, build healthy budgets, and reach your financial goals.": "支出を管理し、健全な予算を立て、目標を達成しましょう。",
         "Back": "戻る",
@@ -2235,7 +3519,6 @@ final class AppViewModel {
         "Create Account or Sign In": "创建账户 / 登录",
         "Account Required": "需要账户",
         "Upgrading to Pro requires an account. Create one or sign in to continue.": "升级到Pro需要账户。请创建账户或登录以继续。",
-        "To upgrade to PennyLet Pro, you need an account. Your data will be saved and synced across devices.": "要升级到PennyLet Pro，您需要一个账户。您的数据将被保存并在设备间同步。",
         "Log In": "登录",
 
         // Onboarding
@@ -2243,11 +3526,11 @@ final class AppViewModel {
         "How PennyLet Works": "PennyLet使用指南",
         "Help": "帮助",
         "Done": "完成",
-        "help_balance": "本月收入减去支出。正数为盈余，负数为亏损。",
-        "help_safe_daily": "计算方式：（月收入 − 固定支出 − 储蓄目标 − 已支出）÷ 剩余天数。超过此金额意味着月底前预算不足。",
-        "help_categories": "按类别分类本月支出。清楚看到哪个类别超支。",
-        "help_ai": "AI分析您的支出模式，提供每日、每周和每月的洞察。免费试用可用次数。",
-        "help_subscriptions": "自动检测此设备上的App Store订阅，显示月度和年度总额。",
+        "help_balance": "这是本月进来的钱减去花出去的钱。可以快速判断这个月整体是否顺利。",
+        "help_safe_daily": "这是花钱前最适合看的数字。PennyLet 会先预留账单、储蓄目标和计划支出。",
+        "help_categories": "这里显示本月钱花在了哪里，帮助您找到最值得注意的类别。",
+        "help_ai": "AI 会把已保存的支出数据整理成每日、每周、每月或预测短文。如果在线 AI 太慢，PennyLet 会改用本机摘要。",
+        "help_subscriptions": "订阅会集中在一个地方。您可以手动添加、扫描符合条件的 App Store 购买，或查看交易中发现的可能订阅。",
         "Welcome to PennyLet": "欢迎使用PennyLet",
         "Track your spending, build healthy budgets, and reach your financial goals.": "追踪支出，建立健康预算，实现财务目标。",
         "Back": "返回",
@@ -2481,13 +3764,7 @@ final class AppViewModel {
     ]
 
     func deleteAllData() async {
-        transactions = []
-        budgets = []
-        goals = []
-        analysisHistory = []
-        recurringSubscriptions = []
-        user = nil
-        saveLocalData()
+        restoreDefaults()
     }
 
     // MARK: - Data Loading
@@ -2706,6 +3983,7 @@ final class AppViewModel {
     func updateGoalAmount(id: String, newAmount: Double) async {
         guard let idx = goals.firstIndex(where: { $0.id == id }) else { return }
         let optimistic = goals[idx]
+        let wasComplete = optimistic.progress >= 1
         goals[idx] = Goal(
             id: optimistic.id, name: optimistic.name,
             targetAmount: optimistic.targetAmount,
@@ -2717,6 +3995,14 @@ final class AppViewModel {
             updatedDate: ISO8601DateFormatter().string(from: Date())
         )
         saveLocalData()
+
+        if !wasComplete, goals[idx].progress >= 1 {
+            NotificationService.shared.scheduleGoalCompleted(
+                id: optimistic.id,
+                title: loc("Goal completed!"),
+                body: "\(optimistic.name) \(loc("is fully funded."))"
+            )
+        }
     }
 
     func deleteGoal(_ goal: Goal) async {

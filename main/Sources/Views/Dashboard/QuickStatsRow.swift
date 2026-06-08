@@ -33,7 +33,7 @@ struct QuickStatsRow: View {
                     title: viewModel.loc("Balance"),
                     amount: abs(summary.balance),
                     icon: "equal",
-                    color: summary.balance >= 0 ? .blue : .red,
+                    color: summary.balance >= 0 ? viewModel.primaryColor : .red,
                     currency: currency,
                     isSubtle: true
                 )
@@ -69,7 +69,7 @@ private struct QuietStatRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
-        .background(Color(.secondarySystemGroupedBackground).opacity(isSubtle ? 0.45 : 0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .themedMiniPanel(tint: color, cornerRadius: 12, colorStrength: isSubtle ? 0.65 : 1)
     }
 
     private var tileShape: PennyLetIconShape {
