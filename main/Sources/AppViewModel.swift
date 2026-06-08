@@ -91,6 +91,8 @@ final class AppViewModel {
     private let goalQuickAddAmountsKey = "goal_quick_add_amounts"
     private let customWatchlistsKey = "custom_watchlists"
     private let dismissedReviewItemIDsKey = "dismissed_review_item_ids"
+    private let aiInsightMemoriesKey = "local_ai_insight_memories"
+    private let dismissedAIInsightIDsKey = "dismissed_ai_insight_ids"
     private let defaultGoalQuickAddAmounts: [Double] = [10, 50, 100, 500]
 
     func savePreferencesToDisk() {
@@ -107,6 +109,7 @@ final class AppViewModel {
         saveGoalQuickAddAmounts()
         saveCustomWatchlists()
         saveDismissedReviewItemIDs()
+        saveAIInsightDismissals()
         saveDisplayBlockPreferences()
     }
 
@@ -124,6 +127,7 @@ final class AppViewModel {
         loadGoalQuickAddAmounts()
         loadCustomWatchlists()
         loadDismissedReviewItemIDs()
+        loadAIInsightDismissals()
         loadWallpaperProfiles()
         loadWallpaperAppearance()
         loadWallpaperTheme()
@@ -140,6 +144,8 @@ final class AppViewModel {
     var user: User?
     var customWatchlists: [String] = []
     var dismissedReviewItemIDs: Set<String> = []
+    var aiInsightMemories: [AIInsightMemory] = []
+    var dismissedAIInsightIDs: Set<String> = []
 
     // Loading
     var isLoading = true
@@ -174,6 +180,10 @@ final class AppViewModel {
            let h = try? decoder.decode([AnalysisHistory].self, from: data) {
             analysisHistory = h
         }
+        if let data = prefs.data(forKey: aiInsightMemoriesKey),
+           let memories = try? decoder.decode([AIInsightMemory].self, from: data) {
+            aiInsightMemories = memories
+        }
         if let data = prefs.data(forKey: "local_recurring_subscriptions"),
            let subs = try? decoder.decode([RecurringSubscription].self, from: data) {
             recurringSubscriptions = subs
@@ -203,6 +213,9 @@ final class AppViewModel {
         }
         if let data = try? JSONEncoder().encode(analysisHistory) {
             prefs.set(data, forKey: "local_analysis_history")
+        }
+        if let data = try? JSONEncoder().encode(aiInsightMemories) {
+            prefs.set(data, forKey: aiInsightMemoriesKey)
         }
         if let data = try? JSONEncoder().encode(recurringSubscriptions) {
             prefs.set(data, forKey: "local_recurring_subscriptions")
@@ -712,6 +725,176 @@ final class AppViewModel {
         dismissedReviewItemIDs = Set(prefs.stringArray(forKey: dismissedReviewItemIDsKey) ?? [])
     }
 
+    private func saveAIInsightDismissals() {
+        prefs.set(Array(dismissedAIInsightIDs).sorted(), forKey: dismissedAIInsightIDsKey)
+    }
+
+    private func loadAIInsightDismissals() {
+        dismissedAIInsightIDs = Set(prefs.stringArray(forKey: dismissedAIInsightIDsKey) ?? [])
+    }
+
+    var activeProInsightCards: [AIInsightMemory] {
+        guard isPro else { return [] }
+
+        let saved = aiInsightMemories
+            .filter { !dismissedAIInsightIDs.contains($0.id) }
+            .prefix(4)
+        let proactive = automaticProInsightMemories()
+            .filter { !dismissedAIInsightIDs.contains($0.id) }
+
+        var seen: Set<String> = []
+        return (Array(proactive) + Array(saved)).compactMap { insight in
+            let key = "\(insight.type)-\(insight.title.lowercased())"
+            guard !seen.contains(key) else { return nil }
+            seen.insert(key)
+            return insight
+        }
+        .prefix(5)
+        .map { $0 }
+    }
+
+    func dismissAIInsightMemory(_ insight: AIInsightMemory) {
+        dismissedAIInsightIDs.insert(insight.id)
+        saveAIInsightDismissals()
+    }
+
+    func clearSavedInsights() {
+        aiInsightMemories = []
+        dismissedAIInsightIDs = []
+        saveAIInsightDismissals()
+        saveLocalData()
+    }
+
+    private func automaticProInsightMemories() -> [AIInsightMemory] {
+        let now = ISO8601DateFormatter().string(from: Date())
+        let monthID = currentMonthIdentifier()
+        var insights: [AIInsightMemory] = []
+
+        if let startSummary = startFromTodaySummary {
+            let title: String
+            let summary: String
+            switch language {
+            case "ja":
+                title = "給料日までの理由"
+                summary = "今いちばん効いているのは、給料日前の請求・貯金・残すお金です。"
+            case "zh":
+                title = "到发薪日前的原因"
+                summary = "现在影响最大的，是发薪日前要付的账单、要存的钱和要保护的钱。"
+            default:
+                title = "Why payday feels tight"
+                summary = "The biggest pressure before payday is bills, savings, and money PennyLet is protecting."
+            }
+            let protected = CurrencyFormat.format(startSummary.totalProtectedBeforeNextIncome, currency: currency)
+            let safe = CurrencyFormat.format(startSummary.trueSafeToSpend, currency: currency)
+            insights.append(AIInsightMemory(
+                id: "auto-safe-\(monthID)-\(Int(startSummary.totalProtectedBeforeNextIncome.rounded()))",
+                type: "safe",
+                title: title,
+                summary: summary,
+                detail: "\(safe) • \(protected)",
+                source: .proactive,
+                relatedFeature: "safe_to_spend",
+                createdDate: now,
+                isProOnly: true
+            ))
+        }
+
+        let reviewCount = reviewQueue.count
+        if reviewCount > 0 {
+            let title: String
+            let summary: String
+            switch language {
+            case "ja":
+                title = "先に確認する項目"
+                summary = "\(reviewCount)件を確認すると、レポートがより正確になります。"
+            case "zh":
+                title = "先检查这些项目"
+                summary = "确认 \(reviewCount) 项后，报告会更准确。"
+            default:
+                title = "Check these first"
+                summary = "\(reviewCount) item\(reviewCount == 1 ? "" : "s") need a quick decision so reports stay clean."
+            }
+            insights.append(AIInsightMemory(
+                id: "auto-review-\(monthID)-\(reviewCount)",
+                type: "review",
+                title: title,
+                summary: summary,
+                detail: nil,
+                source: .proactive,
+                relatedFeature: "review_queue",
+                createdDate: now,
+                isProOnly: true
+            ))
+        }
+
+        if let watch = localMoneyLogicV2Dashboard.watchlists.max(by: { $0.spentThisMonth < $1.spentThisMonth }),
+           watch.spentThisMonth > 0 {
+            let amount = CurrencyFormat.format(watch.spentThisMonth, currency: currency)
+            let title: String
+            let summary: String
+            switch language {
+            case "ja":
+                title = "\(watch.watchlist.name)をチェック"
+                summary = "今月ここに\(amount)使っています。気になる習慣として見続けられます。"
+            case "zh":
+                title = "看看 \(watch.watchlist.name)"
+                summary = "本月这里花了 \(amount)。可以把它当作一个习惯重点观察。"
+            default:
+                title = "Watch \(watch.watchlist.name)"
+                summary = "\(amount) this month. PennyLet can keep an eye on this habit for you."
+            }
+            insights.append(AIInsightMemory(
+                id: "auto-watch-\(monthID)-\(MoneyLogicV2Text.normalizedMerchant(watch.watchlist.name))",
+                type: "watchlist",
+                title: title,
+                summary: summary,
+                detail: nil,
+                source: .proactive,
+                relatedFeature: "watchlists",
+                createdDate: now,
+                isProOnly: true
+            ))
+        }
+
+        let upcoming = localMoneyLogicV2Dashboard.upcomingCommitments.prefix(3)
+        if !upcoming.isEmpty {
+            let total = upcoming.reduce(0) { $0 + $1.amount }
+            let amount = CurrencyFormat.format(total, currency: currency)
+            let title: String
+            let summary: String
+            switch language {
+            case "ja":
+                title = "近い支払い"
+                summary = "近い予定支払いは合計\(amount)。給料日前の計算に入れています。"
+            case "zh":
+                title = "快到的支出"
+                summary = "最近要付的金额合计 \(amount)。PennyLet 已把它算进发薪日前。"
+            default:
+                title = "Upcoming money pressure"
+                summary = "\(amount) is coming up soon, and PennyLet already counts it before payday."
+            }
+            insights.append(AIInsightMemory(
+                id: "auto-commitments-\(monthID)-\(Int(total.rounded()))",
+                type: "subscriptions",
+                title: title,
+                summary: summary,
+                detail: upcoming.map(\.name).joined(separator: " • "),
+                source: .proactive,
+                relatedFeature: "subscriptions",
+                createdDate: now,
+                isProOnly: true
+            ))
+        }
+
+        return insights
+    }
+
+    private func currentMonthIdentifier() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMM"
+        return formatter.string(from: Date())
+    }
+
     private func recurringCandidate(for item: MoneyLogicV2ReviewItem) -> MoneyLogicV2RecurringSeries? {
         let categories = MoneyLogicV2DataAdapter.defaultCategories(
             budget: currentBudget,
@@ -782,7 +965,9 @@ final class AppViewModel {
 
     // Usage limit alerts
     private let aiClient = AIClient.shared
-    private let aiUserFacingTimeoutNanoseconds: UInt64 = 7_000_000_000
+    private var aiUserFacingTimeoutNanoseconds: UInt64 {
+        isPro ? 14_000_000_000 : 9_000_000_000
+    }
     let revenueCat = RevenueCatService()
     let proStatus = ProStatusService()
 
@@ -1068,6 +1253,8 @@ final class AppViewModel {
         currentWeeklyResult = nil
         currentMonthlyResult = nil
         currentForecastResult = nil
+        aiInsightMemories = []
+        dismissedAIInsightIDs = []
         theme = .sage
         isUsingCustomThemeColor = false
         isUsingWallpaperThemeColor = false
@@ -1130,6 +1317,8 @@ final class AppViewModel {
             activeWallpaperProfileIDKey,
             customWatchlistsKey,
             dismissedReviewItemIDsKey,
+            aiInsightMemoriesKey,
+            dismissedAIInsightIDsKey,
         ].forEach { prefs.removeObject(forKey: $0) }
         prefs.synchronize()
     }
@@ -1746,6 +1935,177 @@ final class AppViewModel {
         updateBudgetLocally(data)
     }
 
+    func askPennyLet(_ question: String) -> String {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return loc("Ask about safe spending, subscriptions, watchlists, or what changed.")
+        }
+        guard isPro else {
+            return loc("Ask PennyLet is included with Pro.")
+        }
+
+        let normalized = MoneyLogicV2Text.normalizedMerchant(trimmed)
+        if normalized.contains("safe") || normalized.contains("payday") || normalized.contains("spend") && normalized.contains("can") {
+            return answerSafeSpendingQuestion(normalized)
+        }
+        if normalized.contains("subscription") || normalized.contains("renew") || normalized.contains("bill") {
+            return answerSubscriptionQuestion()
+        }
+        if normalized.contains("changed") || normalized.contains("different") || normalized.contains("higher") {
+            return answerWhatChangedQuestion()
+        }
+        if let keyword = matchedWatchKeyword(in: normalized) {
+            return answerSpendQuestion(for: keyword, normalizedQuestion: normalized)
+        }
+        return answerGeneralMoneyQuestion()
+    }
+
+    private func answerSafeSpendingQuestion(_ normalizedQuestion: String) -> String {
+        let safeSummary = startFromTodaySummary
+        let safeAmount = safeSummary?.trueSafeToSpend ?? localMoneyLogicV2Dashboard.safeToSpend.trueSafeToSpend
+        let dailyAmount = safeSummary?.dailySafeToSpend ?? localMoneyLogicV2Dashboard.safeToSpend.dailySafeToSpend
+        let safe = CurrencyFormat.format(safeAmount, currency: currency)
+        let daily = CurrencyFormat.format(dailyAmount, currency: currency)
+
+        if let amount = firstAmount(in: normalizedQuestion) {
+            let formatted = CurrencyFormat.format(amount, currency: currency)
+            if amount <= max(0, safeAmount) {
+                switch language {
+                case "ja": return "\(formatted)は今のところ大丈夫そうです。給料日までの残りは\(safe)、1日あたりは\(daily)です。"
+                case "zh": return "\(formatted) 目前看起来可以。到发薪日前还剩 \(safe)，每天约 \(daily)。"
+                default: return "\(formatted) looks okay right now. Safe Until Payday is \(safe), about \(daily) per day."
+                }
+            } else {
+                switch language {
+                case "ja": return "\(formatted)は今の安全額を超えます。給料日までの残りは\(safe)、1日あたりは\(daily)です。"
+                case "zh": return "\(formatted) 会超过现在的安全金额。到发薪日前还剩 \(safe)，每天约 \(daily)。"
+                default: return "\(formatted) is above the current safe amount. Safe Until Payday is \(safe), about \(daily) per day."
+                }
+            }
+        }
+
+        let protected = CurrencyFormat.format(safeSummary?.totalProtectedBeforeNextIncome ?? 0, currency: currency)
+        switch language {
+        case "ja": return "給料日まで使える金額は\(safe)です。1日あたりは\(daily)。PennyLetは請求・貯金・残すお金\(protected)を先に守っています。"
+        case "zh": return "到发薪日前可安心花费 \(safe)，每天约 \(daily)。PennyLet 会先保护账单、储蓄和不想动的钱 \(protected)。"
+        default: return "Safe Until Payday is \(safe), about \(daily) per day. PennyLet protects \(protected) for bills, savings, and money you do not want to touch."
+        }
+    }
+
+    private func answerSubscriptionQuestion() -> String {
+        let commitments = localMoneyLogicV2Dashboard.upcomingCommitments.prefix(4)
+        guard !commitments.isEmpty else {
+            return loc("No upcoming subscriptions or bills are saved yet.")
+        }
+        let total = commitments.reduce(0) { $0 + $1.amount }
+        let lines = commitments.map { "\($0.name): \(CurrencyFormat.format($0.amount, currency: currency))" }.joined(separator: "\n")
+        switch language {
+        case "ja": return "近い支払いは合計\(CurrencyFormat.format(total, currency: currency))です。\n\(lines)"
+        case "zh": return "最近要付的金额合计 \(CurrencyFormat.format(total, currency: currency))。\n\(lines)"
+        default: return "Upcoming saved bills and subscriptions total \(CurrencyFormat.format(total, currency: currency)).\n\(lines)"
+        }
+    }
+
+    private func answerWhatChangedQuestion() -> String {
+        let cal = Calendar.current
+        let today = Date()
+        let currentStart = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: today)) ?? today
+        let previousStart = cal.date(byAdding: .day, value: -7, to: currentStart) ?? currentStart
+        let currentTxns = aiExpenseTransactions(transactions.filter { tx in
+            guard let date = tx.dateValue else { return false }
+            return date >= currentStart && date <= today
+        })
+        let previousTxns = aiExpenseTransactions(transactions.filter { tx in
+            guard let date = tx.dateValue else { return false }
+            return date >= previousStart && date < currentStart
+        })
+        let current = aiSpendAmount(in: currentTxns)
+        let previous = aiSpendAmount(in: previousTxns)
+        let delta = current - previous
+        let currentText = CurrencyFormat.format(current, currency: currency)
+        let previousText = CurrencyFormat.format(previous, currency: currency)
+        let deltaText = CurrencyFormat.format(abs(delta), currency: currency)
+        let driver = topCategoryLines(from: currentTxns, limit: 1)
+
+        switch language {
+        case "ja":
+            return delta >= 0
+                ? "直近7日は\(currentText)で、前の7日より\(deltaText)高めです。主な要因: \(driver)。"
+                : "直近7日は\(currentText)で、前の7日\(previousText)より\(deltaText)低めです。主なカテゴリ: \(driver)。"
+        case "zh":
+            return delta >= 0
+                ? "最近 7 天花了 \(currentText)，比前 7 天高 \(deltaText)。主要原因：\(driver)。"
+                : "最近 7 天花了 \(currentText)，比前 7 天 \(previousText) 低 \(deltaText)。主要类别：\(driver)。"
+        default:
+            return delta >= 0
+                ? "The last 7 days were \(currentText), up \(deltaText) from the previous 7 days. Main driver: \(driver)."
+                : "The last 7 days were \(currentText), down \(deltaText) from the previous 7 days of \(previousText). Main category: \(driver)."
+        }
+    }
+
+    private func answerSpendQuestion(for keyword: String, normalizedQuestion: String) -> String {
+        let range = questionDateRange(normalizedQuestion)
+        let matched = aiExpenseTransactions(transactions).filter { tx in
+            guard let date = tx.dateValue, date >= range.start && date <= range.end else { return false }
+            let text = MoneyLogicV2Text.normalizedMerchant([
+                tx.merchant,
+                tx.description,
+                tx.note,
+                tx.category
+            ].compactMap { $0 }.joined(separator: " "))
+            return text.contains(MoneyLogicV2Text.normalizedMerchant(keyword))
+        }
+        let total = aiSpendAmount(in: matched)
+        let amount = CurrencyFormat.format(total, currency: currency)
+        switch language {
+        case "ja": return "\(range.label)の\(keyword)は\(amount)、\(matched.count)件です。"
+        case "zh": return "\(range.label) \(keyword) 花了 \(amount)，共 \(matched.count) 笔。"
+        default: return "\(keyword) spending was \(amount) across \(matched.count) entries \(range.label)."
+        }
+    }
+
+    private func answerGeneralMoneyQuestion() -> String {
+        let safe = CurrencyFormat.format(startFromTodaySummary?.trueSafeToSpend ?? localMoneyLogicV2Dashboard.safeToSpend.trueSafeToSpend, currency: currency)
+        let reviewCount = reviewQueue.count
+        switch language {
+        case "ja": return "今は給料日まで\(safe)使えます。気になることは「コーヒーはいくら？」「何が変わった？」「サブスクは？」のように聞けます。確認が必要な項目は\(reviewCount)件です。"
+        case "zh": return "现在到发薪日前可安心花费 \(safe)。你可以问“咖啡花了多少？”“哪里变了？”“有哪些订阅？”。需要确认的项目有 \(reviewCount) 项。"
+        default: return "Safe Until Payday is \(safe). Try asking “How much was coffee?”, “What changed?”, or “What subscriptions are coming up?” \(reviewCount) item\(reviewCount == 1 ? "" : "s") need review."
+        }
+    }
+
+    private func matchedWatchKeyword(in normalizedQuestion: String) -> String? {
+        let candidates = customWatchlists + ["coffee", "dining", "games", "transport", "shopping", "amazon", "grocery", "groceries", "medical", "subscriptions"]
+        return candidates.first { candidate in
+            normalizedQuestion.contains(MoneyLogicV2Text.normalizedMerchant(candidate))
+        }
+    }
+
+    private func questionDateRange(_ normalizedQuestion: String) -> (start: Date, end: Date, label: String) {
+        let cal = Calendar.current
+        let end = Date()
+        if normalizedQuestion.contains("week") || normalizedQuestion.contains("7") {
+            let start = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: end)) ?? end
+            return (start, end, loc("in the last 7 days"))
+        }
+        if normalizedQuestion.contains("today") {
+            return (cal.startOfDay(for: end), end, loc("today"))
+        }
+        let components = cal.dateComponents([.year, .month], from: end)
+        let start = cal.date(from: components) ?? end
+        return (start, end, loc("this month"))
+    }
+
+    private func firstAmount(in normalizedQuestion: String) -> Double? {
+        let pattern = #"([0-9]+(?:\.[0-9]+)?)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: normalizedQuestion, range: NSRange(normalizedQuestion.startIndex..., in: normalizedQuestion)),
+              let range = Range(match.range(at: 1), in: normalizedQuestion) else {
+            return nil
+        }
+        return Double(normalizedQuestion[range])
+    }
+
     private func aiPersonalContext() -> String {
         let summary = dashboardSpendSummary
         let budget = currentBudget
@@ -1804,8 +2164,16 @@ final class AppViewModel {
             "- Current month top merchants: \(topMerchantLines(from: monthExpenses, limit: 4))",
             "- Largest current month expenses: \(transactionEvidenceLines(monthExpenses.sorted { $0.amount > $1.amount }, limit: 3))",
             "- Recent transactions: \(transactionEvidenceLines(aiEvidenceTransactions(transactions).sorted { ($0.dateValue ?? .distantPast) > ($1.dateValue ?? .distantPast) }, limit: 6))",
-            "- Goals: \(goalContextLines())"
+            "- Goals: \(goalContextLines())",
+            "- Saved Pro insight memory: \(aiInsightMemoryContextLines())"
         ].joined(separator: "\n")
+    }
+
+    private func aiInsightMemoryContextLines() -> String {
+        guard isPro, !aiInsightMemories.isEmpty else { return "none" }
+        return aiInsightMemories.prefix(5).map { memory in
+            "\(memory.type): \(memory.title) — \(memory.summary)"
+        }.joined(separator: "; ")
     }
 
     private func aiOutputRules(for analysisName: String) -> String {
@@ -1816,6 +2184,7 @@ final class AppViewModel {
         - Do not invent missing transactions, income, merchants, dates, goals, or category changes.
         - Cite exact amounts, categories, merchants, dates, percentages, or time windows when making claims.
         - If history is short or the user started mid-month, say the answer is based on saved PennyLet data instead of implying a complete bank history.
+        - Saved Pro insight memory is context only. Use it to keep continuity, but verify claims against the current data snapshot.
         - Never suggest connecting a bank, uploading credentials, or using financial data that is not already saved in PennyLet.
         - Keep the output short, specific, and useful in under 15 seconds.
         - The action must be measurable: include a target amount, category, merchant, or time window.
@@ -2792,7 +3161,39 @@ final class AppViewModel {
         )
 
         analysisHistory.insert(localEntry, at: 0)
+        if isPro, let memory = makeInsightMemory(from: localEntry) {
+            aiInsightMemories.removeAll { $0.type == memory.type && $0.title == memory.title }
+            aiInsightMemories.insert(memory, at: 0)
+            aiInsightMemories = Array(aiInsightMemories.prefix(24))
+        }
         saveLocalData()
+    }
+
+    private func makeInsightMemory(from entry: AnalysisHistory) -> AIInsightMemory? {
+        let lines = entry.content
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let first = lines.first else { return nil }
+
+        let title = String(first.prefix(72))
+        let summary = String((lines.dropFirst().first ?? first).prefix(150))
+        let detail = lines.dropFirst(2).first.map { String($0.prefix(160)) }
+        let source: AIInsightMemory.Source = entry.content.localizedCaseInsensitiveContains("local")
+            ? .localFallback
+            : .generated
+
+        return AIInsightMemory(
+            id: "memory-\(entry.id)",
+            type: entry.type,
+            title: title,
+            summary: summary,
+            detail: detail,
+            source: source,
+            relatedFeature: entry.type,
+            createdDate: entry.createdDate ?? ISO8601DateFormatter().string(from: Date()),
+            isProOnly: true
+        )
     }
 
     func chartsForHistory(_ item: AnalysisHistory) -> (category: [(name: String, amount: Double)], daily: [(day: String, amount: Double)]) {
@@ -2967,7 +3368,7 @@ final class AppViewModel {
         switch language { case "ja": return "目標"; case "zh": return "目标"; default: return "Goals" }
     }
     var aiTab: String {
-        switch language { case "ja": return "AI"; case "zh": return "AI"; default: return "AI" }
+        switch language { case "ja": return "チェック"; case "zh": return "检查"; default: return "Checks" }
     }
     var moreTab: String {
         switch language { case "ja": return "その他"; case "zh": return "更多"; default: return "More" }
@@ -3054,10 +3455,10 @@ final class AppViewModel {
         switch language { case "ja": return "マンスリー"; case "zh": return "每月"; default: return "Monthly" }
     }
     var aiInsightsTitle: String {
-        switch language { case "ja": return "AIインサイト"; case "zh": return "AI洞察"; default: return "AI Insights" }
+        switch language { case "ja": return "マネーチェック"; case "zh": return "用钱检查"; default: return "Money Checks" }
     }
     var generatingLabel: String {
-        switch language { case "ja": return "分析を生成中..."; case "zh": return "正在生成分析..."; default: return "Generating insights..." }
+        switch language { case "ja": return "確認中..."; case "zh": return "正在检查..."; default: return "Checking..." }
     }
     var resultLabel: String {
         switch language { case "ja": return "結果"; case "zh": return "结果"; default: return "Result" }
@@ -3066,7 +3467,7 @@ final class AppViewModel {
         switch language { case "ja": return "クリア"; case "zh": return "清除"; default: return "Clear" }
     }
     var generateLabel: String {
-        switch language { case "ja": return "生成"; case "zh": return "生成"; default: return "Generate" }
+        switch language { case "ja": return "チェック"; case "zh": return "检查"; default: return "Check" }
     }
     var historyLabel: String {
         switch language { case "ja": return "履歴"; case "zh": return "历史"; default: return "History" }
@@ -3075,22 +3476,22 @@ final class AppViewModel {
         switch language { case "ja": return "今月の無料利用はあと\(n)回です"; case "zh": return "本月剩余免费使用次数：\(n)"; default: return "\(n) free uses remaining this month" }
     }
     var dailyAnalysisTitle: String {
-        switch language { case "ja": return "今日の分析"; case "zh": return "每日分析"; default: return "Daily Analysis" }
+        switch language { case "ja": return "今日をチェック"; case "zh": return "检查今天"; default: return "Check Today" }
     }
     var dailyAnalysisSubtitle: String {
-        switch language { case "ja": return "今日の支出パターンのAI分析を取得"; case "zh": return "获取今日消费模式的AI分析"; default: return "Get an AI recap of today's spending patterns" }
+        switch language { case "ja": return "今日のお金を短く確認"; case "zh": return "快速看看今天的钱"; default: return "A quick read on today's money" }
     }
     var weeklyRecapTitle: String {
-        switch language { case "ja": return "週間レポート"; case "zh": return "每周回顾"; default: return "Weekly Recap" }
+        switch language { case "ja": return "今週をチェック"; case "zh": return "检查本周"; default: return "Check This Week" }
     }
     var weeklyRecapSubtitle: String {
-        switch language { case "ja": return "過去7日間の支出を振り返る"; case "zh": return "回顾过去7天的消费"; default: return "Review your spending over the past 7 days" }
+        switch language { case "ja": return "この7日間で変わったこと"; case "zh": return "看看最近 7 天有什么变化"; default: return "See what changed over the last 7 days" }
     }
     var monthlyInsightTitle: String {
-        switch language { case "ja": return "月間分析"; case "zh": return "月度洞察"; default: return "Monthly Insight" }
+        switch language { case "ja": return "今月をチェック"; case "zh": return "检查本月"; default: return "Check This Month" }
     }
     var monthlyInsightSubtitle: String {
-        switch language { case "ja": return "今月のお金を確認"; case "zh": return "查看本月资金状态"; default: return "Check this month's money" }
+        switch language { case "ja": return "今月のお金の流れ"; case "zh": return "看看这个月的钱"; default: return "A plain read on this month's money" }
     }
     var upgradeTitle: String {
         switch language { case "ja": return "アップグレード"; case "zh": return "升级"; default: return "Upgrade" }
@@ -3099,13 +3500,13 @@ final class AppViewModel {
         switch language { case "ja": return "Proにアップグレード"; case "zh": return "升级到Pro"; default: return "Upgrade to Pro" }
     }
     var monthlyInsightRequiresPro: String {
-        switch language { case "ja": return "月間分析はProが必要です"; case "zh": return "月度洞察需要Pro"; default: return "Monthly Insights require Pro" }
+        switch language { case "ja": return "今月のチェックはProで使えます"; case "zh": return "本月检查需要 Pro"; default: return "This month check is included with Pro" }
     }
     var upgradeDescription: String {
         switch language {
-        case "ja": return "Proで予測、チャート、カテゴリ、AI分析を増やせます。"
-        case "zh": return "Pro 可解锁预测、图表、分类和更多 AI 分析。"
-        default: return "Unlock forecasts, charts, categories, and more AI."
+        case "ja": return "Proはあなたのリズムを学び、給料日前に役立つメモを出します。"
+        case "zh": return "Pro 会学习你的用钱节奏，在发薪日前给出有用提醒。"
+        default: return "Pro learns your rhythm and helps before payday."
         }
     }
     var subscribeLabel: String {

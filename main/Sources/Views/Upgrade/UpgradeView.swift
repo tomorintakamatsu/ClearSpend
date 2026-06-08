@@ -105,9 +105,9 @@ struct UpgradeView: View {
             }
 
             HStack(spacing: 8) {
-                heroChip(viewModel.loc("More private reports"))
-                heroChip(viewModel.loc("Forecasts"))
-                heroChip(viewModel.loc("Auto check-ins"))
+                heroChip(viewModel.loc("Learns your rhythm"))
+                heroChip(viewModel.loc("Ask PennyLet"))
+                heroChip(viewModel.loc("Checks before payday"))
             }
         }
         .padding(20)
@@ -266,9 +266,10 @@ struct UpgradeView: View {
 
     private var proFeatures: [(String, String, String)] {
         [
-            ("sparkles", viewModel.loc("More private reports"), viewModel.loc("More daily, weekly, monthly, and forecast runs")),
-            ("chart.line.uptrend.xyaxis", viewModel.loc("Spending Forecasts"), viewModel.loc("Forecasts from your saved history")),
-            ("doc.text.magnifyingglass", viewModel.loc("Source-backed AI checks"), viewModel.loc("Reports stay tied to saved PennyLet data")),
+            ("sparkles", viewModel.loc("Pro learns your rhythm"), viewModel.loc("Saved Money Checks help PennyLet explain future changes")),
+            ("message.fill", viewModel.loc("Ask PennyLet"), viewModel.loc("Ask practical questions about saved spending and payday")),
+            ("chart.line.uptrend.xyaxis", viewModel.loc("Payday forecasts"), viewModel.loc("Look ahead with saved PennyLet data, not bank login")),
+            ("doc.text.magnifyingglass", viewModel.loc("Source-backed Money Checks"), viewModel.loc("Every answer stays tied to saved PennyLet data")),
             ("chart.pie.fill", viewModel.loc("Visual Pie Charts"), viewModel.loc("Clear weekly and monthly category charts")),
             ("tag.fill", viewModel.loc("Custom Categories"), viewModel.loc("Create categories that match your life")),
             ("clock.arrow.2.circlepath", viewModel.autoAnalysisLabel, viewModel.loc("Scheduled check-ins without opening the app")),
@@ -296,6 +297,9 @@ struct UpgradeView: View {
             comparisonRow(icon: "chart.bar.fill", label: viewModel.weeklyRecapTitle, free: "1\(viewModel.loc("/mo"))", pro: "15\(viewModel.loc("/mo"))")
             comparisonRow(icon: "doc.text.magnifyingglass", label: viewModel.monthlyInsightTitle, free: "—", pro: "10\(viewModel.loc("/mo"))")
             comparisonRow(icon: "chart.line.uptrend.xyaxis", label: viewModel.loc("Spending Forecasts"), free: "—", pro: "3\(viewModel.loc("/mo"))")
+            comparisonRow(icon: "sparkle.magnifyingglass", label: viewModel.loc("Saved insight memory"), free: "—", pro: viewModel.loc("Included"))
+            comparisonRow(icon: "message.fill", label: viewModel.loc("Ask PennyLet"), free: "—", pro: viewModel.loc("Included"))
+            comparisonRow(icon: "bell.badge.fill", label: viewModel.loc("Proactive insight cards"), free: "—", pro: viewModel.loc("Included"))
             comparisonRow(icon: "camera.viewfinder", label: viewModel.scanReceiptLabel, free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
             comparisonRow(icon: "creditcard.fill", label: viewModel.loc("Subscription Tracker"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
             comparisonRow(icon: "heart.fill", label: viewModel.loc("Budget Health"), free: viewModel.loc("Included"), pro: viewModel.loc("Included"))
@@ -307,7 +311,7 @@ struct UpgradeView: View {
             comparisonRow(icon: "clock.arrow.2.circlepath", label: viewModel.autoAnalysisLabel, free: "—", pro: viewModel.loc("Included"))
             comparisonRow(icon: "tag.fill", label: viewModel.loc("Custom Categories"), free: "—", pro: viewModel.loc("Included"))
             comparisonRow(icon: "chart.pie.fill", label: viewModel.loc("Visual Pie Charts"), free: "—", pro: viewModel.loc("Included"))
-            comparisonRow(icon: "wand.and.stars", label: viewModel.loc("Richer AI reports"), free: "—", pro: viewModel.loc("Included"))
+            comparisonRow(icon: "wand.and.stars", label: viewModel.loc("Richer Money Checks"), free: "—", pro: viewModel.loc("Included"))
         }
         .font(.caption2).padding(.vertical, 8)
         .premiumPanel(tint: .yellow)

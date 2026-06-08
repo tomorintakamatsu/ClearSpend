@@ -110,6 +110,9 @@ struct DashboardView: View {
                     activeSheet = .todaySnapshot
                 }
             )
+            if viewModel.isPro, let insight = viewModel.activeProInsightCards.first {
+                DashboardProInsightCard(insight: insight)
+            }
         case .homeMonthlyPulse:
             QuickStatsRow(summary: spendSummary, currency: currency)
         case .homeReviewQueue:
@@ -724,6 +727,75 @@ private struct DashboardWatchlistsCard: View {
         } message: {
             Text(viewModel.loc("This removes it from Home. Your transactions stay saved."))
         }
+    }
+}
+
+private struct DashboardProInsightCard: View {
+    @Environment(AppViewModel.self) private var viewModel
+    let insight: AIInsightMemory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                PennyLetIconTile(symbol: "sparkles", tint: Color(.systemYellow), size: 36, symbolScale: 0.42, shape: .circle, isProminent: true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.loc("Pro noticed this"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color(.systemYellow))
+                    Text(insight.title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(insight.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    Haptics.selection()
+                    viewModel.dismissAIInsightMemory(insight)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Color(.tertiarySystemGroupedBackground), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.loc("Dismiss"))
+            }
+
+            if let detail = insight.detail, !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(detail)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(.systemYellow))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                Haptics.selection()
+                viewModel.navigateToTab = 3
+            } label: {
+                Label(viewModel.loc("Open Money Checks"), systemImage: "arrow.right.circle.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color(.systemYellow))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color(.systemYellow).opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color(.systemYellow).opacity(0.24), lineWidth: 1)
+        )
     }
 }
 

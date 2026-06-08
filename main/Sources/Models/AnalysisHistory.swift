@@ -52,3 +52,25 @@ struct AnalysisHistoryData: Codable {
         case dailyChartJSON = "daily_chart_json"
     }
 }
+
+struct AIInsightMemory: Codable, Identifiable, Equatable, Sendable {
+    enum Source: String, Codable, Sendable {
+        case generated
+        case localFallback
+        case proactive
+    }
+
+    var id: String
+    var type: String
+    var title: String
+    var summary: String
+    var detail: String?
+    var source: Source
+    var relatedFeature: String?
+    var createdDate: String
+    var isProOnly: Bool
+
+    var hasDetail: Bool {
+        detail?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+}

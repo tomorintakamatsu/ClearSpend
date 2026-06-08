@@ -156,7 +156,7 @@ struct SettingsView: View {
         .tint(viewModel.primaryColor)
         .keyboardDoneButton(viewModel.loc("Done"))
         .listSectionSpacing(18)
-        .environment(\.defaultMinListRowHeight, 66)
+        .environment(\.defaultMinListRowHeight, 74)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(viewModel.loc("Done")) {
@@ -268,7 +268,7 @@ struct SettingsView: View {
         .tint(viewModel.primaryColor)
         .keyboardDoneButton(viewModel.loc("Done"))
         .listSectionSpacing(22)
-        .environment(\.defaultMinListRowHeight, 66)
+        .environment(\.defaultMinListRowHeight, 74)
     }
 
     private func settingsRootSection<Content: View>(
@@ -312,16 +312,16 @@ struct SettingsView: View {
     }
 
     private func settingsNavigationLabel(_ destination: SettingsChunk) -> some View {
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
                 Image(systemName: settingsIcon(for: destination))
-                    .font(.body.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(settingsTint(for: destination), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .frame(width: 46, height: 46)
+                    .background(settingsTint(for: destination), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(settingsTitle(for: destination))
-                        .font(.headline.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                     if let subtitle = settingsSubtitle(for: destination) {
                         Text(subtitle)
@@ -484,12 +484,12 @@ struct SettingsView: View {
                 .foregroundStyle(tint ?? Color.primary)
         } icon: {
             Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(tint ?? viewModel.primaryColor)
-                .frame(width: 24)
+                .frame(width: 30)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 13)
+        .padding(.vertical, 16)
     }
 
     private func settingsControlRow<Control: View>(
@@ -499,16 +499,16 @@ struct SettingsView: View {
         tint: Color,
         @ViewBuilder control: () -> Control
     ) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .frame(width: 46, height: 46)
+                .background(tint, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.headline.weight(.semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                 if let subtitle {
                     Text(subtitle)
@@ -521,7 +521,7 @@ struct SettingsView: View {
 
             control()
         }
-        .padding(.vertical, 15)
+        .padding(.vertical, 18)
     }
 
     private var exportBusyBanner: some View {
@@ -1824,6 +1824,20 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            settingsDivider()
+
+            Button {
+                Haptics.selection()
+                viewModel.clearSavedInsights()
+            } label: {
+                settingsActionLabel(
+                    viewModel.loc("Clear saved insights"),
+                    systemImage: "sparkles.slash",
+                    tint: Color(.systemPurple)
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 

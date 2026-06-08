@@ -8,6 +8,8 @@ struct AIFeaturesView: View {
     @State private var tabErrors: [String?] = [nil, nil, nil, nil]
     @State private var tabProgressPhases: [AppViewModel.AIProgressPhase] = [.collectingData, .collectingData, .collectingData, .collectingData]
     @State private var showsHistory = false
+    @State private var askQuestion = ""
+    @State private var askAnswer: String?
 
     private var tabResults: [AppViewModel.AIResult?] {
         [viewModel.currentDailyResult, viewModel.currentWeeklyResult, viewModel.currentMonthlyResult, viewModel.currentForecastResult]
@@ -29,6 +31,15 @@ struct AIFeaturesView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
                     .padding(.bottom, 12)
+            }
+
+            if viewModel.isPro {
+                proInsightRail
+                    .padding(.bottom, 10)
+
+                askPennyLetCard
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
             }
 
             Picker(viewModel.loc("Analysis"), selection: $selectedTab) {
@@ -122,18 +133,103 @@ struct AIFeaturesView: View {
     private var aiHeaderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
-                PennyLetIconTile(symbol: "sparkles", tint: Color(.systemPurple), size: 44, shape: .circle, isProminent: true)
+                PennyLetIconTile(symbol: "sparkles", tint: viewModel.isPro ? Color(.systemYellow) : viewModel.primaryColor, size: 44, shape: .circle, isProminent: true)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.loc("PennyLet Intelligence"))
+                    Text(viewModel.loc("Money Checks"))
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.primary)
+                    Text(viewModel.isPro ? viewModel.loc("Pro learns your rhythm from saved PennyLet data.") : viewModel.loc("Run a quick check when you want a plain-language read."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(18)
         .premiumPanel(tint: viewModel.primaryColor)
+    }
+
+    private var proInsightRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                let insights = viewModel.activeProInsightCards
+                if insights.isEmpty {
+                    ProInsightMiniCard(
+                        title: viewModel.loc("PennyLet is ready to learn"),
+                        summary: viewModel.loc("Run a Money Check and Pro will reuse the useful notes across the app."),
+                        detail: viewModel.loc("Your money math still stays deterministic."),
+                        tint: Color(.systemYellow),
+                        onDismiss: nil
+                    )
+                } else {
+                    ForEach(insights) { insight in
+                        ProInsightMiniCard(
+                            title: insight.title,
+                            summary: insight.summary,
+                            detail: insight.detail,
+                            tint: insight.source == .proactive ? viewModel.primaryColor : Color(.systemYellow)
+                        ) {
+                            viewModel.dismissAIInsightMemory(insight)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private var askPennyLetCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                PennyLetIconTile(symbol: "message.fill", tint: viewModel.primaryColor, size: 30, symbolScale: 0.42, shape: .circle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(viewModel.loc("Ask PennyLet"))
+                        .font(.headline.weight(.bold))
+                    Text(viewModel.loc("Ask about saved spending, watchlists, subscriptions, or payday."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 10) {
+                TextField(viewModel.loc("What changed this week?"), text: $askQuestion)
+                    .textInputAutocapitalization(.sentences)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(Color(.tertiarySystemGroupedBackground), in: Capsule(style: .continuous))
+
+                Button {
+                    Haptics.selection()
+                    askAnswer = viewModel.askPennyLet(askQuestion)
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .premiumActionFill(tint: viewModel.primaryColor, followsWallpaperOpacity: false)
+                }
+                .buttonStyle(.plain)
+                .disabled(askQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let askAnswer {
+                Text(askAnswer)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(viewModel.primaryColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(16)
+        .premiumPanel(tint: viewModel.primaryColor)
+        .animation(AnimationPresets.smooth, value: askAnswer)
     }
 
     private var dailyTab: some View {
@@ -887,5 +983,64 @@ struct AIFeaturesView: View {
             return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(dateLocale))
         }
         return iso
+    }
+}
+
+private struct ProInsightMiniCard: View {
+    let title: String
+    let summary: String
+    let detail: String?
+    let tint: Color
+    let onDismiss: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 28, height: 28)
+                    .background(tint.opacity(0.12), in: Circle())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let onDismiss {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 24)
+                            .background(Color(.tertiarySystemGroupedBackground), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let detail, !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(detail)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(width: 268, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(tint.opacity(0.18), lineWidth: 1)
+        )
     }
 }

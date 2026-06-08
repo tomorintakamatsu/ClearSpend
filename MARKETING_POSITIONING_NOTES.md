@@ -54,6 +54,27 @@ Connected-account finance assistants are strongest when a user is comfortable li
 - Missing data is not hidden. PennyLet should say what it knows, what it does not know, and what the number is based on.
 - The core product is daily spending clarity, not high-end financial advising, investing, taxes, or account aggregation.
 
+## V4 Pro Intelligence Notes
+
+V4 adds a clearer Pro story:
+
+- Free PennyLet helps users start today and know what is safe to spend.
+- PennyLet Pro learns the user's rhythm from saved PennyLet data.
+- Pro should feel like continuity, not a separate AI page.
+- The app calculates. Pro explains, remembers, and connects the dots.
+- Saved insight memory is local, clearable, and used only as context for future Money Checks.
+- Ask PennyLet should answer practical questions from saved data, such as coffee spending, upcoming subscriptions, Safe Until Payday, and what changed this week.
+- Proactive insight cards should feel helpful and calm, not nagging.
+
+Marketing lines to reuse:
+
+- Free gives clarity. Pro learns your rhythm.
+- PennyLet Pro helps before you ask.
+- PennyLet calculates. Pro explains.
+- Ask PennyLet what changed, what is coming up, or what is safe to spend.
+- Pro turns daily tracking into personal money checks.
+- Smarter over time, still private by design.
+
 ## Messaging To Avoid
 
 - Do not position PennyLet as a financial adviser.
